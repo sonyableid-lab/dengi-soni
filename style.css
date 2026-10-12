@@ -259,7 +259,8 @@ button:disabled { opacity: .55; cursor: default; }
   text-align: center; cursor: pointer; background: var(--paper); transition: background .15s, border-color .15s;
 }
 .drop:hover, .drop.over { border-color: var(--violet); background: var(--lilac-soft); }
-.drop input { display: none; }
+.drop { position: relative; }
+.file-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 .drop .big { font-family: var(--serif); font-size: 30px; font-weight: 600; display: block; line-height: 1.1; }
 .drop .small { color: var(--muted); font-size: 13.5px; }
 details.card summary { cursor: pointer; color: var(--muted); }

@@ -441,12 +441,17 @@ async function importFile(file) {
   let records;
   if (name.endsWith(".pdf")) records = await parsePdf(await loadPdfjs(), bytes);
   else if (name.endsWith(".csv") || name.endsWith(".txt")) records = parseCsv(decodeText(bytes));
-  else if (name.endsWith(".json")) return { backup: await S.mergeData(JSON.parse(decodeText(bytes))) };
+  else if (name.endsWith(".json")) return { backup: await S.mergeData(parseBackup(bytes)) };
   else if (/\.xlsx?$/.test(name)) throw new Error("Excel пока не поддерживается — скачайте выписку в PDF или CSV.");
   else throw new Error("Неизвестный формат. Нужен PDF или CSV.");
   const res = await S.importRecords(records, file.name);
   if (res.added) await S.setMeta("lastImportAt", Date.now());
   return res;
+}
+
+function parseBackup(bytes) {
+  try { return JSON.parse(decodeText(bytes)); }
+  catch { throw new Error("Это не файл копии «Денег Сони». Нужен файл вида dengi-soni-2026-10-12.json."); }
 }
 
 function backupFileName() {
@@ -482,7 +487,7 @@ async function importPage() {
     <div class="card">
       <h2>Выписки</h2>
       <label class="drop" id="drop">
-        <input type="file" id="file" accept=".pdf,.csv,.json,application/pdf,text/csv,application/json" multiple>
+        <input type="file" id="file" class="file-hidden" accept=".pdf,.csv,.json" multiple>
         <span class="big">Выбрать выписки</span>
         <span class="small">PDF или CSV из Т-Банка, можно несколько сразу. На компьютере — просто перетащите сюда.</span>
       </label>
@@ -498,7 +503,8 @@ async function importPage() {
         (при расхождениях побеждает более свежая правка).</p>
       <div class="row" style="margin-top:10px">
         <button id="save-btn">Сохранить копию</button>
-        <label class="btn secondary">Открыть копию<input type="file" id="restore" accept=".json,application/json" style="display:none"></label>
+        <button type="button" id="restore-btn" class="secondary">Открыть копию</button>
+        <input type="file" id="restore" class="file-hidden" tabindex="-1" aria-hidden="true">
       </div>
       <p class="hint">Последняя копия: ${fmt(lastBackup)}. Сейчас в приложении ${ops.length} ${plural(ops.length, "операция", "операции", "операций")}.</p>
       <div id="bk-msg" class="msg"></div>
@@ -515,7 +521,8 @@ async function importPage() {
       <summary style="cursor:pointer;color:var(--muted)">Удалить все данные с этого устройства</summary>
       <p class="hint">Операции, категории и лимиты будут стёрты из этого браузера. Сначала сохраните копию.</p>
       <button id="wipe-btn" class="danger">Удалить всё</button>
-    </details>`;
+    </details>
+    <p class="hint" style="text-align:center">Версия приложения: ${APP_VERSION}</p>`;
 
   const drop = $("#drop");
   const handle = async (files) => {
@@ -542,11 +549,14 @@ async function importPage() {
       if (await saveBackup()) { await importPage(); showMsg($("#bk-msg"), "ok", "Копия сохранена. Если выбрали iCloud Drive — она появится на других устройствах."); }
     } catch (e) { showMsg($("#bk-msg"), "err", "Не получилось сохранить: " + e.message); }
   });
+  // Кнопка явно открывает выбор файла: в веб-приложении из Dock (Safari)
+  // скрытый input внутри label может не реагировать на клик
+  $("#restore-btn").addEventListener("click", () => $("#restore").click());
   $("#restore").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     try {
-      const st = await S.mergeData(JSON.parse(decodeText(new Uint8Array(await f.arrayBuffer()))));
+      const st = await S.mergeData(parseBackup(new Uint8Array(await f.arrayBuffer())));
       await importPage();
       showMsg($("#bk-msg"), "ok", `Готово: обновлено операций ${st.operations}, категорий ${st.categories}, лимитов ${st.limits}.`, true);
     } catch (err) { showMsg($("#bk-msg"), "err", err.message); }
@@ -561,8 +571,15 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
+const APP_VERSION = "v5";
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW:", e));
+  // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch((e) => console.warn("SW:", e));
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", render);
 await S.init();

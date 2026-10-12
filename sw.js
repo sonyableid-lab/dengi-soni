@@ -1,7 +1,7 @@
 // sw.js — офлайн-режим: все файлы приложения кэшируются при первом открытии,
 // дальше приложение запускается без интернета. При наличии сети тихо
 // подтягивает обновления (новая версия применится при следующем запуске).
-const VERSION = "v3";
+const VERSION = "v5";
 const CACHE = "dengi-soni-" + VERSION;
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./engine.js", "./store.js",
@@ -22,16 +22,23 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// Сначала кэш (мгновенно и офлайн), параллельно — обновление из сети
+// Сначала сеть (чтобы обновления применялись сразу), а без сети или при
+// медленном ответе (дольше 3 секунд) — сохранённая копия из кэша.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(e.request, { ignoreSearch: true });
-      const fresh = fetch(e.request)
-        .then((res) => { if (res.ok) cache.put(e.request, res.clone()); return res; })
-        .catch(() => null);
-      return cached || (await fresh) || new Response("Нет сети", { status: 503 });
-    })
-  );
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const fromNet = fetch(e.request, { cache: "no-cache" }).then((res) => {
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
+    });
+    const timeout = new Promise((r) => setTimeout(r, 3000, null));
+    try {
+      const res = await Promise.race([fromNet, timeout]);
+      if (res) return res;
+    } catch {}
+    const cached = await cache.match(e.request, { ignoreSearch: true });
+    if (cached) return cached;
+    try { return await fromNet; } catch { return new Response("Нет сети", { status: 503 }); }
+  })());
 });

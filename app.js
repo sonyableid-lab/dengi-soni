@@ -1,6 +1,6 @@
 // app.js — интерфейс «Денег Сони»: страницы, графики, загрузка выписок.
 import * as S from "./store.js";
-import { analyze, claudeSummary, monthName, monthsFrom } from "./analysis.js";
+import { analyze, claudeSummary, monthName, monthsFrom, allCompleteMonths } from "./analysis.js";
 import { parsePdf, parseCsv, decodeText, OTHER, contribution, KIND_LABELS } from "./engine.js";
 
 // ---------------------------------------------------------------------------
@@ -262,11 +262,11 @@ function opItem(o, cat, withSelect, cats = []) {
       ? `<select class="debt-select" data-hash="${esc(o.hash)}" aria-label="Какой долг"><option value="">какой долг?</option>${debtsCache.map((d) => `<option value="${esc(d.id)}" ${d.id === o.debtId ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select>`
       : `<a class="note-btn" href="#/plan">добавить долг</a>`)
     : "";
-  const noteBtn = withSelect ? `<button type="button" class="note-btn" data-hash="${esc(o.hash)}">${o.note ? "изменить заметку" : "+ заметка"}</button>` : "";
+  const noteBtn = withSelect ? `<button type="button" class="note-btn" data-hash="${esc(o.hash)}">${o.note ? "изменить заметку" : "+ заметка"}</button><button type="button" class="note-btn plan-toggle" data-hash="${esc(o.hash)}">${o.planExcluded ? "вернуть в план" : "не учитывать в плане"}</button>` : "";
   return `<li class="${excluded ? "excluded" : ""}" data-hash="${esc(o.hash)}">
     <span class="d" title="${esc(o.description)}">${esc(o.description) || "—"}</span>
     <span class="a" ${excluded ? 'title="Не входит в доходы и расходы"' : ""}>${amount}</span>
-    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${o.accountType === "credit" ? `<span class="src-tag">кредитка</span>` : ""}${o.kind === "income" && cat.kind === "expense" ? `<span class="src-tag refund" title="Поступление в категорию расходов уменьшает траты, а не считается доходом">уменьшает траты</span>` : ""}${o.kind === "income" && cat.kind === "transfer" ? `<span class="src-tag">не доход</span>` : ""}${catHtml}${debtSel}${noteBtn}</span>
+    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${o.accountType === "credit" ? `<span class="src-tag">кредитка</span>` : ""}${o.planExcluded ? `<span class="src-tag off">вне плана</span>` : ""}${o.kind === "income" && cat.kind === "expense" ? `<span class="src-tag refund" title="Поступление в категорию расходов уменьшает траты, а не считается доходом">уменьшает траты</span>` : ""}${o.kind === "income" && cat.kind === "transfer" ? `<span class="src-tag">не доход</span>` : ""}${catHtml}${debtSel}${noteBtn}</span>
     ${o.note ? `<span class="note">${esc(o.note)}</span>` : ""}
   </li>`;
 }
@@ -308,6 +308,7 @@ async function opsPage(params) {
     </div>
     <div class="card">
       ${list.length ? `<p class="summary-line">${list.length} ${plural(list.length, "операция", "операции", "операций")}${list.every((o) => catOf(o).kind === "transfer") ? ", в доходы и расходы не входят" : `, итог <b>${total >= 0 ? "+" : "−"}${money(Math.abs(total))}</b>`}</p>
+        ${query && list.length > 1 ? `<div class="row" style="margin:0 0 6px"><button type="button" class="note-btn" id="bulk-plan">${list.every((o) => o.planExcluded) ? "вернуть все найденные в план" : "не учитывать все найденные в плане"}</button></div>` : ""}
         <ul class="op-list">${html}</ul>` : `<div class="empty-note">${query || catFilter ? "Ничего не нашлось — попробуйте другой месяц или сбросьте фильтр." : "В этом месяце операций нет."}</div>`}
       <p class="hint">Чтобы поменять категорию, выберите её в списке у операции. Приложение запомнит
         правило: похожие операции (с тем же словом в описании) получат ту же категорию. У переводов категория
@@ -349,7 +350,19 @@ async function opsPage(params) {
     await S.setOperationDebt(sel.dataset.hash, sel.value);
     toast(sel.value ? `Платёж учтён в долге «${sel.selectedOptions[0].text}».` : "Платёж отвязан от долга.");
   }));
-  $$("button.note-btn").forEach((btn) => btn.addEventListener("click", () => {
+  $("#bulk-plan")?.addEventListener("click", async () => {
+    const off = !list.every((o) => o.planExcluded);
+    for (const o of list) await S.setOperationPlanExcluded(o.hash, off);
+    toast(off ? `Не учитываются в «Плане»: ${list.length} ${plural(list.length, "операция", "операции", "операций")}.` : "Найденные операции снова учитываются в «Плане».");
+    opsPage(parseHash().params);
+  });
+  $$(".plan-toggle").forEach((btn) => btn.addEventListener("click", async () => {
+    const op = list.find((o) => o.hash === btn.dataset.hash);
+    await S.setOperationPlanExcluded(op.hash, !op.planExcluded);
+    toast(op.planExcluded ? "Операция снова учитывается в «Плане»." : "Операция не будет учитываться в «Плане». На «Обзоре» она остаётся.");
+    opsPage(parseHash().params);
+  }));
+  $$("button.note-btn:not(.plan-toggle)").forEach((btn) => btn.addEventListener("click", () => {
     const li = btn.closest("li");
     const op = list.find((o) => o.hash === btn.dataset.hash);
     li.querySelector(".note")?.remove();
@@ -384,13 +397,17 @@ function statRow(label, value, color, cats, explain) {
 }
 
 async function planPage() {
-  const [ops, cats, debts, cushionSaved, cushionTarget, cushionMonths] = await Promise.all([
+  const [ops, cats, debts, cushionSaved, cushionTarget, cushionMonths, excludedMonths] = await Promise.all([
     S.operations(), S.categories(), S.debts(),
     S.getSetting("cushionSaved", 0), S.getSetting("cushionTarget", 3), S.getSetting("cushionMonths", 12),
+    S.getSetting("excludedMonths", []),
   ]);
-  const a = analyze({ ops, cats, debts, settings: { cushionSaved, cushionTarget, cushionMonths } });
+  const a = analyze({ ops, cats, debts, settings: { cushionSaved, cushionTarget, cushionMonths, excludedMonths } });
   const view = $("#view");
-  const period = a.n ? `${monthName(a.months[0])} — ${monthName(a.months[a.n - 1])}` : "";
+  const period = a.n ? a.months.map(monthName).join(", ") : "";
+  const allMonths = allCompleteMonths(ops).slice(-8);
+  const monthChips = allMonths.map((m) => `<button type="button" class="month-chip ${excludedMonths.includes(m) ? "off" : ""}" data-m="${m}" aria-pressed="${!excludedMonths.includes(m)}">${monthName(m)}</button>`).join("");
+  const exclOpsSum = a.excludedOps.reduce((s, o) => s + o.amount, 0);
 
   // Куда уходит средний месяц: полоса из четырёх частей
   const parts = [
@@ -418,6 +435,8 @@ async function planPage() {
 
   view.innerHTML = `
     <div class="page-head"><h1>План</h1>${period ? `<span class="hint" style="margin:0">средние за ${a.n} ${plural(a.n, "месяц", "месяца", "месяцев")}: ${period}</span>` : ""}</div>
+    ${allMonths.length ? `<div class="month-chips"><span class="hint" style="margin:0">Учитывать месяцы:</span>${monthChips}</div>` : ""}
+    ${a.excludedOps.length ? `<p class="hint" style="margin:-6px 0 14px">Не ${plural(a.excludedOps.length, "учитывается", "учитываются", "учитываются")} ${a.excludedOps.length} ${plural(a.excludedOps.length, "операция", "операции", "операций")} на ${money(exclOpsSum)} — ${plural(a.excludedOps.length, "отмечена", "отмечены", "отмечены")} в «Операциях» как «вне плана».</p>` : ""}
     ${a.n < 2 ? `<div class="msg show info note">Для надёжных средних нужно хотя бы 2–3 полных месяца выписок. Сейчас полных месяцев: ${a.n}. Текущий месяц в расчёт не берётся — он ещё не закончился.</div>` : ""}
     <section class="card">
       <h2>Средний месяц</h2>
@@ -478,6 +497,12 @@ async function planPage() {
     <p class="hint" style="text-align:center">Это расчёт по средним, а не финансовая консультация. Решения — за вами.</p>`;
 
   const saveSetting = (key, el, num = true) => el.addEventListener("change", async () => { await S.setSetting(key, num ? +el.value || 0 : el.value); planPage(); });
+  $$(".month-chip").forEach((b) => b.addEventListener("click", async () => {
+    const m = b.dataset.m;
+    const next = excludedMonths.includes(m) ? excludedMonths.filter((x) => x !== m) : [...excludedMonths, m];
+    await S.setSetting("excludedMonths", next);
+    planPage();
+  }));
   saveSetting("cushionSaved", $("#cu-saved"));
   saveSetting("cushionTarget", $("#cu-target"));
   saveSetting("cushionMonths", $("#cu-months"));
@@ -874,7 +899,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

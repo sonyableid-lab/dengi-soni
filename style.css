@@ -362,3 +362,9 @@ body.dropping::after {
 
 .src-tag { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; background: #E9DDF0; color: #4E2E5C; }
 .src-tag.refund { background: var(--salad-soft); color: var(--salad-ink); }
+
+.month-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -6px 0 16px; }
+.month-chip { background: var(--salad); color: var(--forest); padding: 5px 12px; font-size: 13px; }
+.month-chip:hover { background: #B5CF55; }
+.month-chip.off { background: transparent; color: var(--muted); text-decoration: line-through; border: 1px dashed #B9BDA6; }
+.src-tag.off { background: var(--paper); color: var(--muted); text-decoration: line-through; }

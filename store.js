@@ -286,6 +286,13 @@ export async function reclassifyAll() {
   return changes.length;
 }
 
+/** Не учитывать операцию в расчётах «Плана» (разовая трата, поездка и т. п.). */
+export async function setOperationPlanExcluded(hash, excluded) {
+  const op = (await getAll("operations")).find((o) => o.hash === hash);
+  if (!op) throw new Error("Операция не найдена.");
+  await putMany("operations", [{ ...op, planExcluded: !!excluded, updatedAt: now() }]);
+}
+
 export async function setOperationNote(hash, note) {
   const op = (await getAll("operations")).find((o) => o.hash === hash);
   if (!op) throw new Error("Операция не найдена.");

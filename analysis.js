@@ -7,10 +7,16 @@ const MONTHS_NOM = ["январь", "февраль", "март", "апрель"
 export const monthName = (m) => MONTHS_NOM[+m.slice(5, 7) - 1];
 
 /** Полные месяцы с данными (текущий, ещё не закончившийся, не берём), не больше `max` последних. */
-export function completeMonths(ops, today = new Date(), max = 6) {
+export function completeMonths(ops, today = new Date(), max = 6, excluded = []) {
   const cur = today.toISOString().slice(0, 7);
-  const all = [...new Set(ops.map((o) => o.date.slice(0, 7)))].filter((m) => m < cur).sort();
+  const all = [...new Set(ops.map((o) => o.date.slice(0, 7)))].filter((m) => m < cur && !excluded.includes(m)).sort();
   return all.slice(-max);
+}
+
+/** Все полные месяцы с данными (для переключателей на странице «План»). */
+export function allCompleteMonths(ops, today = new Date()) {
+  const cur = today.toISOString().slice(0, 7);
+  return [...new Set(ops.map((o) => o.date.slice(0, 7)))].filter((m) => m < cur).sort();
 }
 
 /** Остаток долга с учётом привязанных платежей. */
@@ -68,7 +74,9 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
   const catById = new Map(cats.map((c) => [c.id, c]));
   const other = cats.find((c) => c.name === OTHER);
   const catOf = (o) => catById.get(o.categoryId) || other;
-  const months = completeMonths(ops, today);
+  const excludedMonths = settings.excludedMonths || [];
+  const months = completeMonths(ops, today, 6, excludedMonths);
+  const excludedOps = ops.filter((o) => o.planExcluded && months.includes(o.date.slice(0, 7)));
   const n = months.length;
 
   const per = new Map(); // id категории → { cat, byMonth: {m: сумма расходов} }
@@ -77,7 +85,7 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
   const monthly = Object.fromEntries(months.map((m) => [m, { income: 0, expense: 0, debt: 0 }]));
   for (const o of ops) {
     const m = o.date.slice(0, 7);
-    if (!monthly[m]) continue;
+    if (!monthly[m] || o.planExcluded) continue;
     const c = catOf(o);
     const v = contribution(o, c.kind);
     monthly[m].income += v.income; monthly[m].expense += v.expense; monthly[m].debt += v.debt;
@@ -133,7 +141,7 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
   return {
     months, n,
     avgIncome, avgEssential, avgOther, avgDebt, avgFree, monthly,
-    categories, incomeCats, debtCats,
+    categories, incomeCats, debtCats, excludedMonths, excludedOps,
     cushion: { saved, target, target3: avgEssential * 3, target6: avgEssential * 6, targetMonthsOfExpenses, collectIn, monthly: cushionMonthly, capped: cushionCapped, left: cushionLeft },
     debts: debtList, totalDebt, buffer, debtBudget, plan, minOnly,
   };

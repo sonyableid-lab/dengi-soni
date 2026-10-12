@@ -1,0 +1,288 @@
+/* style.css — «Деньги Сони».
+   Настроение: мягкая бумага цвета овсяного молока, лесной зелёный текст,
+   салатовый и фиолетовый как два главных акцента. Заголовки и суммы —
+   узкая антиква Cormorant (с курсивом), интерфейс — гротеск Onest.
+   Одна смелая вещь на экране — тёмно-зелёная «обложка» месяца на обзоре;
+   всё остальное тихое и аккуратное. */
+
+/* ---------- Шрифты (лежат в приложении — работают без интернета) ---------- */
+@font-face { font-family: "Cormorant"; font-weight: 500; font-style: normal; font-display: swap;
+  src: url(fonts/cormorant-cyrillic-500-normal.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Cormorant"; font-weight: 500; font-style: normal; font-display: swap;
+  src: url(fonts/cormorant-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Cormorant"; font-weight: 600; font-style: normal; font-display: swap;
+  src: url(fonts/cormorant-cyrillic-600-normal.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Cormorant"; font-weight: 600; font-style: normal; font-display: swap;
+  src: url(fonts/cormorant-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Cormorant"; font-weight: 500; font-style: italic; font-display: swap;
+  src: url(fonts/cormorant-cyrillic-500-italic.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Cormorant"; font-weight: 500; font-style: italic; font-display: swap;
+  src: url(fonts/cormorant-latin-500-italic.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Cormorant"; font-weight: 600; font-style: italic; font-display: swap;
+  src: url(fonts/cormorant-cyrillic-600-italic.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Cormorant"; font-weight: 600; font-style: italic; font-display: swap;
+  src: url(fonts/cormorant-latin-600-italic.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Onest"; font-weight: 100 900; font-style: normal; font-display: swap;
+  src: url(fonts/onest-cyrillic-wght-normal.woff2) format("woff2-variations"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Onest"; font-weight: 100 900; font-style: normal; font-display: swap;
+  src: url(fonts/onest-latin-wght-normal.woff2) format("woff2-variations"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+20BD, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+/* ---------- Токены ---------- */
+:root {
+  --paper: #EFEFE4;        /* овсяное молоко с каплей шалфея */
+  --sheet: #F8F7EF;        /* карточки — чуть светлее фона */
+  --forest: #1F3B2B;       /* основной текст и тёмные поверхности */
+  --forest-2: #2C5139;
+  --muted: #6C7566;
+  --line: #DCDDCC;
+  --salad: #C3DA6A;        /* салатовый акцент */
+  --salad-ink: #4E6B1F;    /* салатовый, но читаемый как текст */
+  --salad-soft: #E4EDBE;
+  --violet: #6A4E9E;       /* фиолетовый акцент */
+  --lilac: #DCD0EF;
+  --lilac-soft: #ECE6F6;
+  --rose: #B8496F;         /* превышение лимита, ошибки */
+  --rose-soft: #F3DCE4;
+  --honey: #D9A93A;
+
+  --serif: "Cormorant", "Cormorant Garamond", Georgia, serif;
+  --sans: "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --r-lg: 32px;
+  --r-md: 22px;
+  --r-sm: 14px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--forest);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--violet); }
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
+/* ---------- Навигация ---------- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  max-width: 1080px; margin: 0 auto;
+  padding: calc(18px + env(safe-area-inset-top)) 20px 6px;
+}
+.brand {
+  font-family: var(--serif); font-weight: 600; font-size: 26px; letter-spacing: -0.01em;
+  display: inline-flex; align-items: center; gap: 8px; color: var(--forest); text-decoration: none;
+}
+.brand svg { color: var(--violet); }
+.nav-links { display: flex; gap: 4px; background: var(--sheet); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+.nav-links a {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14px;
+  padding: 7px 16px; border-radius: 999px; transition: background .15s, color .15s;
+}
+.nav-links a:hover { color: var(--forest); }
+.nav-links a.active { background: var(--forest); color: var(--paper); }
+.nav-links .ico { display: none; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+
+/* ---------- Заголовки страниц ---------- */
+.page-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; margin: 8px 0 20px; }
+.page-head h1, .hero-month {
+  font-family: var(--serif); font-weight: 500; letter-spacing: -0.02em; line-height: 0.95; margin: 0;
+}
+.page-head h1 { font-size: clamp(40px, 7vw, 60px); }
+.page-head h1 em { font-style: italic; color: var(--violet); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---------- Обложка месяца (главный акцент) ---------- */
+.hero {
+  position: relative; overflow: hidden;
+  background: var(--forest); color: var(--paper);
+  border-radius: var(--r-lg);
+  padding: 26px 30px 28px;
+  margin-bottom: 18px;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; align-items: end;
+}
+.month-pick { position: relative; display: inline-flex; align-items: baseline; gap: 10px; cursor: pointer; grid-column: 1 / -1; }
+.hero-month { font-size: clamp(46px, 9vw, 84px); font-style: italic; color: var(--paper); }
+.month-pick .year { font-family: var(--serif); font-size: 26px; color: var(--salad); }
+.month-pick .caret { font-size: 14px; color: var(--salad); transform: translateY(-6px); }
+.month-pick select { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 16px; }
+.hero-left { align-self: end; }
+.hero-caption { font-size: 15px; color: #C9D3BE; margin: 18px 0 2px; }
+.hero-sum {
+  font-family: var(--serif); font-weight: 600; font-size: clamp(54px, 11vw, 104px);
+  line-height: 0.9; letter-spacing: -0.03em; color: var(--salad);
+}
+.hero-sum.negative { color: var(--lilac); }
+.hero-sum .rub { font-size: 0.55em; margin-left: 6px; }
+.flows { display: flex; flex-direction: column; gap: 8px; align-self: end; min-width: 220px; }
+.flow { border-radius: var(--r-sm); padding: 10px 14px; display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
+.flow span { font-size: 13px; }
+.flow b { font-family: var(--serif); font-size: 26px; font-weight: 600; line-height: 1; }
+.flow.in { background: var(--salad); color: var(--forest); }
+.flow.out { background: var(--lilac); color: #3B2A5C; }
+.hero-sprig { position: absolute; right: -10px; top: -14px; width: 190px; height: 190px; color: var(--forest-2); pointer-events: none; }
+.hero > *:not(.hero-sprig) { position: relative; }
+@media (max-width: 640px) {
+  .hero { grid-template-columns: 1fr; padding: 22px 22px 22px; border-radius: 28px; }
+  .flows { flex-direction: row; min-width: 0; }
+  .flow { flex: 1; flex-direction: column; gap: 2px; }
+  .flow b { font-size: 22px; }
+  .hero-sprig { width: 140px; height: 140px; }
+}
+
+/* ---------- Карточки ---------- */
+.card {
+  background: var(--sheet); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 20px 22px; margin-bottom: 16px;
+}
+.card h2 { font-family: var(--serif); font-weight: 600; font-size: 28px; line-height: 1.05; margin: 0 0 14px; letter-spacing: -0.01em; }
+.card.lilac { background: var(--lilac-soft); border-color: transparent; }
+.hint { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 68ch; }
+.grid-2 { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; }
+@media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.card-head h2 { margin: 0; }
+
+/* Переключатель расходы/доходы */
+.tabs { display: inline-flex; gap: 2px; background: var(--paper); border-radius: 999px; padding: 3px; }
+.tabs .tab {
+  font: inherit; font-size: 13.5px; font-weight: 500; padding: 6px 14px; border: none; border-radius: 999px;
+  background: transparent; color: var(--muted); cursor: pointer;
+}
+.tabs .tab.active { background: var(--forest); color: var(--paper); }
+
+/* ---------- Формы и кнопки ---------- */
+select, input[type="number"], input[type="text"], textarea {
+  font: inherit; font-size: 15px; color: var(--forest);
+  padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--sheet);
+}
+textarea { border-radius: var(--r-sm); width: 100%; margin-top: 8px; resize: vertical; font-size: 13.5px; line-height: 1.45; }
+select { appearance: none; -webkit-appearance: none; padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%231F3B2B' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; }
+button, .btn {
+  font: inherit; font-weight: 500; font-size: 14.5px; padding: 10px 20px; border: none; border-radius: 999px;
+  background: var(--forest); color: var(--paper); cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+button:hover, .btn:hover { background: var(--forest-2); }
+button.secondary, .btn.secondary { background: var(--lilac); color: #3B2A5C; }
+button.secondary:hover, .btn.secondary:hover { background: #D0C1EA; }
+button.danger { background: var(--rose-soft); color: var(--rose); }
+button:disabled { opacity: .55; cursor: default; }
+.chip { border: none; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+
+/* ---------- Список операций ---------- */
+.op-list { list-style: none; margin: 0; padding: 0; }
+.op-list li {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.op-list li:last-child { border-bottom: none; }
+.op-list .d { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-list .sub { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; min-width: 0; }
+.op-list .sub select { padding: 4px 30px 4px 12px; font-size: 13px; max-width: 190px; background-position: right 11px center; background-color: var(--paper); border-color: transparent; }
+.op-list .a { grid-row: 1 / span 2; grid-column: 2; text-align: right; white-space: nowrap; font-family: var(--serif); font-size: 22px; font-weight: 600; }
+.op-list li.day-head {
+  display: block; border: none; padding: 20px 0 2px;
+  font-family: var(--serif); font-style: italic; font-size: 22px; color: var(--violet);
+}
+.op-list li.day-head:first-child { padding-top: 4px; }
+.amount-expense { color: var(--forest); }
+.amount-income { color: var(--salad-ink); }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 999px;
+  font-size: 12.5px; white-space: nowrap; background: var(--paper); color: var(--forest); cursor: pointer;
+}
+.badge .dot, .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.summary-line { color: var(--muted); font-size: 14px; margin: 0 0 6px; }
+.summary-line b { font-family: var(--serif); font-size: 20px; color: var(--forest); font-weight: 600; }
+
+/* ---------- Лимиты ---------- */
+.limit-row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.limit-row:last-child { border-bottom: none; }
+.limit-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.limit-name { font-family: var(--serif); font-size: 24px; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.limit-sums { color: var(--muted); font-size: 13.5px; }
+.limit-row.state-over .limit-sums { color: var(--rose); }
+.progress { height: 12px; background: var(--paper); border-radius: 999px; margin-top: 10px; overflow: hidden; }
+.progress .bar { height: 100%; border-radius: 999px; min-width: 4px; transition: width .3s ease; }
+.state-ok .bar { background: var(--salad); }
+.state-warn .bar { background: var(--honey); }
+.state-over .bar { background: var(--rose); }
+.limit-input { width: 130px; text-align: right; }
+.no-limits { color: var(--muted); padding: 6px 0; }
+.kw-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.kw-row:last-of-type { border-bottom: none; }
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.cat-chips .badge { padding: 6px 8px 6px 10px; font-size: 13.5px; }
+.cat-chips .cat-del { background: none; color: var(--muted); padding: 0 2px; font-size: 13px; }
+.cat-chips .cat-del:hover { color: var(--rose); background: none; }
+
+/* ---------- Сообщения ---------- */
+.msg { padding: 12px 16px; border-radius: var(--r-sm); margin: 12px 0 0; display: none; white-space: pre-line; font-size: 14px; }
+.msg.show { display: block; }
+.msg.ok { background: var(--salad-soft); color: var(--forest); }
+.msg.err { background: var(--rose-soft); color: var(--rose); }
+.msg.info { background: var(--lilac-soft); color: #3B2A5C; }
+.msg a { color: inherit; font-weight: 600; }
+.note { margin: 0 0 16px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50; margin: 0;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  width: max-content; max-width: min(620px, calc(100vw - 28px));
+  align-items: center; gap: 14px; padding: 12px 12px 12px 18px; border-radius: 999px;
+  background: var(--forest) !important; color: var(--paper) !important;
+  box-shadow: 0 10px 30px rgba(31, 59, 43, .25);
+}
+.toast.show { display: flex; }
+.toast .chip { background: var(--salad); color: var(--forest); font-weight: 600; flex: none; }
+
+.empty {
+  text-align: center; padding: 40px 20px 34px;
+}
+.empty h2 { font-size: 36px; }
+.empty p { color: var(--muted); max-width: 46ch; margin: 0 auto 18px; }
+.empty-note { color: var(--muted); padding: 24px 10px; text-align: center; }
+
+/* Загрузка файлов */
+.drop {
+  display: block; border: 1.5px dashed #B9BDA6; border-radius: var(--r-md); padding: 30px 20px;
+  text-align: center; cursor: pointer; background: var(--paper); transition: background .15s, border-color .15s;
+}
+.drop:hover, .drop.over { border-color: var(--violet); background: var(--lilac-soft); }
+.drop input { display: none; }
+.drop .big { font-family: var(--serif); font-size: 30px; font-weight: 600; display: block; line-height: 1.1; }
+.drop .small { color: var(--muted); font-size: 13.5px; }
+details.card summary { cursor: pointer; color: var(--muted); }
+
+/* ---------- Телефон: навигация снизу плавающей «капсулой» ---------- */
+@media (max-width: 640px) {
+  .topbar { padding: calc(14px + env(safe-area-inset-top)) 16px 0; }
+  .brand { font-size: 23px; }
+  .nav-links {
+    position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 40;
+    justify-content: space-around; background: var(--forest); border: none; padding: 6px;
+    box-shadow: 0 10px 30px rgba(31, 59, 43, .28);
+  }
+  .nav-links a { flex: 1; flex-direction: column; gap: 2px; padding: 7px 4px 6px; font-size: 11px; color: #AFC0A9; }
+  .nav-links a.active { background: var(--forest-2); color: var(--salad); }
+  .nav-links .ico { display: block; }
+  main { padding: 12px 16px calc(110px + env(safe-area-inset-bottom)); }
+  .card { padding: 18px 16px; border-radius: 20px; }
+  .card h2 { font-size: 25px; }
+  .toast { bottom: calc(90px + env(safe-area-inset-bottom)); border-radius: 20px; }
+  .op-list .a { font-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.hero-sum, .flow b, .op-list .a, .summary-line b, .op-list li.day-head { font-variant-numeric: lining-nums proportional-nums; }
+.btn { text-decoration: none; }

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- Деньги Сони — учёт личных финансов. Всё работает в браузере, без сервера:
+     данные хранятся на устройстве (IndexedDB), выписки разбираются здесь же. -->
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Деньги Сони</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Деньги Сони">
+  <meta name="theme-color" content="#EFEFE4">
+  <link rel="preload" href="fonts/cormorant-cyrillic-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/chart.umd.min.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <nav class="topbar">
+    <a class="brand" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.5l1.9 6.2 5.6-3.3-3.3 5.6 6.3 1.9-6.3 2 3.3 5.5-5.6-3.3-1.9 6.4-2-6.4-5.5 3.3 3.3-5.5-6.3-2 6.3-1.9-3.3-5.6 5.5 3.3z"/></svg>Деньги Сони</a>
+    <div class="nav-links">
+      <a href="#/" data-route="/"><svg class="ico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg><span>Обзор</span></a>
+      <a href="#/ops" data-route="/ops"><svg class="ico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Операции</span></a>
+      <a href="#/limits" data-route="/limits"><svg class="ico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/></svg><span>Лимиты</span></a>
+      <a href="#/import" data-route="/import"><svg class="ico" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/></svg><span>Загрузка</span></a>
+    </div>
+  </nav>
+  <main id="view"><div class="empty-note">Загрузка…</div></main>
+  <div id="toast" class="msg toast"><span id="toast-text"></span><button id="toast-undo" class="chip">Отменить</button></div>
+</body>
+</html>

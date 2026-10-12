@@ -1,5 +1,6 @@
 // app.js — интерфейс «Денег Сони»: страницы, графики, загрузка выписок.
 import * as S from "./store.js";
+import { analyze, claudeSummary, monthName, monthsFrom } from "./analysis.js";
 import { parsePdf, parseCsv, decodeText, OTHER, contribution, KIND_LABELS } from "./engine.js";
 
 // ---------------------------------------------------------------------------
@@ -68,7 +69,7 @@ const SPRIG = `<svg class="hero-sprig" viewBox="0 0 200 200" fill="none" stroke=
 // ---------------------------------------------------------------------------
 // Маршрутизация (#/, #/ops, #/limits, #/import)
 // ---------------------------------------------------------------------------
-const routes = { "/": dashboard, "/ops": opsPage, "/limits": limitsPage, "/import": importPage };
+const routes = { "/": dashboard, "/ops": opsPage, "/plan": planPage, "/limits": limitsPage, "/import": importPage };
 function parseHash() {
   const h = location.hash.replace(/^#/, "") || "/";
   const [path, qs] = h.split("?");
@@ -116,9 +117,9 @@ async function dashboard() {
   // Итоги с учётом типа категории: переводы между своими счетами не считаются,
   // а возвраты и чужие доли (например, за аренду) уменьшают расход своей категории
   const contrib = (o) => contribution(o, catOf(o).kind);
-  let income = 0, expense = 0;
-  for (const o of mOps) { const c = contrib(o); income += c.income; expense += c.expense; }
-  const net = income - expense;
+  let income = 0, expense = 0, debtPay = 0;
+  for (const o of mOps) { const c = contrib(o); income += c.income; expense += c.expense; debtPay += c.debt; }
+  const net = income - expense - debtPay;
 
   const byCat = (kind) => {
     const m = new Map();
@@ -157,6 +158,7 @@ async function dashboard() {
       <div class="flows">
         <div class="flow in"><span>пришло</span><b>${money(income)}</b></div>
         <div class="flow out"><span>потрачено</span><b>${money(expense)}</b></div>
+        ${Math.abs(debtPay) > 0.5 ? `<div class="flow debt"><span>на долги</span><b>${money(debtPay)}</b></div>` : ""}
       </div>
     </section>
     <div class="grid-2">
@@ -242,6 +244,7 @@ async function backupReminder() {
   }
 }
 
+let debtsCache = [];
 function opItem(o, cat, withSelect, cats = []) {
   const excluded = cat.kind === "transfer";
   const amount = o.kind === "expense"
@@ -250,11 +253,16 @@ function opItem(o, cat, withSelect, cats = []) {
   const catHtml = withSelect
     ? `<select class="cat-select" data-hash="${esc(o.hash)}" aria-label="Категория">${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === cat.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`
     : badge(cat);
+  const debtSel = withSelect && cat.kind === "debt"
+    ? (debtsCache.length
+      ? `<select class="debt-select" data-hash="${esc(o.hash)}" aria-label="Какой долг"><option value="">какой долг?</option>${debtsCache.map((d) => `<option value="${esc(d.id)}" ${d.id === o.debtId ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select>`
+      : `<a class="note-btn" href="#/plan">добавить долг</a>`)
+    : "";
   const noteBtn = withSelect ? `<button type="button" class="note-btn" data-hash="${esc(o.hash)}">${o.note ? "изменить заметку" : "+ заметка"}</button>` : "";
   return `<li class="${excluded ? "excluded" : ""}" data-hash="${esc(o.hash)}">
     <span class="d" title="${esc(o.description)}">${esc(o.description) || "—"}</span>
     <span class="a" ${excluded ? 'title="Не входит в доходы и расходы"' : ""}>${amount}</span>
-    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${catHtml}${noteBtn}</span>
+    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${catHtml}${debtSel}${noteBtn}</span>
     ${o.note ? `<span class="note">${esc(o.note)}</span>` : ""}
   </li>`;
 }
@@ -263,7 +271,8 @@ function opItem(o, cat, withSelect, cats = []) {
 // Операции
 // ---------------------------------------------------------------------------
 async function opsPage(params) {
-  const [ops, cats] = await Promise.all([S.operations(), S.categories()]);
+  const [ops, cats, debts] = await Promise.all([S.operations(), S.categories(), S.debts()]);
+  debtsCache = debts;
   const catFilter = params.get("cat") || "";
   const query = (params.get("q") || "").trim();
   const months = monthsOf(ops);
@@ -330,9 +339,13 @@ async function opsPage(params) {
     else if (res.skipped === "other") text = "Перенесено в «Прочее».";
     else text = "Категория изменена.";
     toast(text, async () => { await S.undoChange(res.undo); render(); });
-    if (res.moved) render();
+    if (res.moved || catById.get(sel.value).kind === "debt" || sel.closest("li").querySelector(".debt-select")) render();
   }));
-  $$(".note-btn").forEach((btn) => btn.addEventListener("click", () => {
+  $$(".debt-select").forEach((sel) => sel.addEventListener("change", async () => {
+    await S.setOperationDebt(sel.dataset.hash, sel.value);
+    toast(sel.value ? `Платёж учтён в долге «${sel.selectedOptions[0].text}».` : "Платёж отвязан от долга.");
+  }));
+  $$("button.note-btn").forEach((btn) => btn.addEventListener("click", () => {
     const li = btn.closest("li");
     const op = list.find((o) => o.hash === btn.dataset.hash);
     li.querySelector(".note")?.remove();
@@ -349,6 +362,182 @@ async function opsPage(params) {
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); if (e.key === "Escape") { saved = true; opsPage(parseHash().params); } });
     input.addEventListener("blur", save);
   }));
+}
+
+// ---------------------------------------------------------------------------
+// План: средний месяц, подушка, долги, «Спросить Claude»
+// ---------------------------------------------------------------------------
+const DEBT_TYPES = { card: "Кредитная карта", loan: "Кредит", person: "Долг человеку" };
+
+async function planPage() {
+  const [ops, cats, debts, cushionSaved, cushionTarget, cushionMonths] = await Promise.all([
+    S.operations(), S.categories(), S.debts(),
+    S.getSetting("cushionSaved", 0), S.getSetting("cushionTarget", 3), S.getSetting("cushionMonths", 12),
+  ]);
+  const a = analyze({ ops, cats, debts, settings: { cushionSaved, cushionTarget, cushionMonths } });
+  const view = $("#view");
+  const period = a.n ? `${monthName(a.months[0])} — ${monthName(a.months[a.n - 1])}` : "";
+
+  // Куда уходит средний месяц: полоса из четырёх частей
+  const parts = [
+    { label: "обязательные", v: a.avgEssential, color: "var(--violet)" },
+    { label: "остальные траты", v: a.avgOther, color: "var(--lilac)" },
+    { label: "долги", v: Math.max(0, a.avgDebt), color: "#7B4A86" },
+    { label: "свободно", v: Math.max(0, a.avgFree), color: "var(--salad)" },
+  ];
+  const base = Math.max(a.avgIncome, parts.reduce((s, p) => s + p.v, 0)) || 1;
+  const bar = parts.filter((p) => p.v > 0.5).map((p) => `<span style="width:${(p.v / base) * 100}%;background:${p.color}" title="${p.label}: ${money(p.v)}"></span>`).join("");
+
+  const nonEss = a.categories.filter((c) => !c.cat.essential && c.cat.kind === "expense").slice(0, 6);
+  const unsorted = a.categories.filter((c) => c.cat.kind === "both").reduce((s, c) => s + c.avg, 0);
+  const debtRows = a.debts.map((d) => {
+    const pd = a.plan.byDebt[d.id];
+    const when = d.remaining <= 0.5 ? "закрыт" : pd && pd.month ? `закроется ${monthsFrom(pd.month)}` : "при текущем остатке не закрывается";
+    const meta = [DEBT_TYPES[d.type] || "Долг", d.rate ? `${String(d.rate).replace(".", ",")}% годовых` : "без процентов", d.minPayment ? `платёж от ${money(d.minPayment)}` : "", d.dueDay ? `до ${d.dueDay}-го числа` : ""].filter(Boolean).join(", ");
+    return `<li class="debt" data-id="${esc(d.id)}">
+      <div><span class="limit-name">${esc(d.name)}</span><div class="limit-sums">${meta}</div><div class="limit-sums">${when}</div></div>
+      <div class="debt-right"><b>${money(d.remaining)}</b><button type="button" class="note-btn debt-edit" data-id="${esc(d.id)}">изменить</button></div>
+      ${d.amount > 0 ? `<div class="progress" style="grid-column:1/-1"><div class="bar" style="width:${Math.min(100, (1 - d.remaining / Math.max(d.amount, 1)) * 100)}%;background:var(--salad)"></div></div>` : ""}
+    </li>`;
+  }).join("");
+
+  view.innerHTML = `
+    <div class="page-head"><h1>План</h1>${period ? `<span class="hint" style="margin:0">средние за ${a.n} ${plural(a.n, "месяц", "месяца", "месяцев")}: ${period}</span>` : ""}</div>
+    ${a.n < 2 ? `<div class="msg show info note">Для надёжных средних нужно хотя бы 2–3 полных месяца выписок. Сейчас полных месяцев: ${a.n}. Текущий месяц в расчёт не берётся — он ещё не закончился.</div>` : ""}
+    <section class="card">
+      <h2>Средний месяц</h2>
+      <div class="split-bar">${bar}</div>
+      <dl class="stat-list">
+        <div><dt>приходит</dt><dd>${money(a.avgIncome)}</dd></div>
+        <div><dt><span class="dot" style="background:var(--violet)"></span>обязательные траты</dt><dd>${money(a.avgEssential)}</dd></div>
+        <div><dt><span class="dot" style="background:var(--lilac)"></span>остальные траты</dt><dd>${money(a.avgOther)}</dd></div>
+        ${Math.abs(a.avgDebt) > 0.5 ? `<div><dt><span class="dot" style="background:#7B4A86"></span>платежи по долгам</dt><dd>${money(a.avgDebt)}</dd></div>` : ""}
+        <div class="free"><dt><span class="dot" style="background:var(--salad)"></span>остаётся свободным</dt><dd>${a.avgFree < 0 ? "−" : ""}${money(Math.abs(a.avgFree))}</dd></div>
+      </dl>
+      ${nonEss.length ? `<h3>Где можно сэкономить</h3>
+        <p class="hint" style="margin-top:0">Необязательные траты, от больших к меньшим. Стрелка — последний полный месяц по сравнению со средним.</p>
+        <ul class="op-list">${nonEss.map((c) => `<li><span class="d">${dot(c.cat)} ${esc(c.cat.name)}</span><span class="a">${money(c.avg)}</span>
+          <span class="sub">${Math.abs(c.change) >= 0.1 ? `${c.change > 0 ? "↑" : "↓"} ${Math.round(Math.abs(c.change) * 100)}% в ${MONTHS_PREP[+a.months[a.n - 1].slice(5, 7) - 1]}` : "примерно как обычно"}${c.avg > 0 ? `, сократить на 20% — это ${money(c.avg * 0.2)} в месяц` : ""}</span></li>`).join("")}</ul>` : ""}
+      ${unsorted > 0.5 ? `<p class="hint">Ещё ${money(unsorted)} в месяц — переводы людям и «Прочее» без точной категории. Если разметить их в «Операциях», анализ станет точнее.</p>` : ""}
+    </section>
+
+    <section class="card lilac">
+      <h2>Подушка безопасности</h2>
+      <p class="hint" style="margin-top:0">Запас на случай, если доход пропадёт. Обычно советуют 3–6 месяцев обязательных трат
+        (какие траты обязательные, отмечается в «Лимитах» → «Ключевые слова»).</p>
+      <div class="cushion-grid">
+        <div><span class="kicker">3 месяца</span><b>${money(a.cushion.target3)}</b></div>
+        <div><span class="kicker">6 месяцев</span><b>${money(a.cushion.target6)}</b></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <label class="field">уже отложено, ₽<input type="number" inputmode="numeric" id="cu-saved" min="0" step="1000" value="${a.cushion.saved || ""}" placeholder="0"></label>
+        <label class="field">цель<select id="cu-target">${[3, 6].map((m) => `<option value="${m}" ${m === a.cushion.targetMonthsOfExpenses ? "selected" : ""}>${m} месяца</option>`.replace("6 месяца", "6 месяцев")).join("")}</select></label>
+        <label class="field">собрать за<select id="cu-months">${[6, 12, 18, 24].map((m) => `<option value="${m}" ${m === a.cushion.collectIn ? "selected" : ""}>${m} мес.</option>`).join("")}</select></label>
+      </div>
+      <p class="big-line">${a.cushion.left <= 0.5 ? "Цель достигнута — подушка собрана." : a.avgFree <= 0 ? "Сейчас свободного остатка нет: сначала стоит сократить траты." : `Откладывайте <b>${money(a.cushion.monthly)}</b> в месяц`}</p>
+      ${a.cushion.capped ? `<p class="hint">Чтобы собрать подушку за ${a.cushion.collectIn} мес., понадобилось бы ${money(a.cushion.left / a.cushion.collectIn)} в месяц — больше половины свободного остатка. Я ограничила взнос половиной, поэтому срок выйдет дольше.</p>` : ""}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Долги</h2><button type="button" id="debt-add" class="secondary">Добавить долг</button></div>
+      ${a.debts.length ? `<ul class="debt-list">${debtRows}</ul>
+        <p class="big-line">${a.debtBudget > 0.5 || a.plan.minTotal > 0
+          ? `Без напряжения можно направлять в долги <b>${money(a.plan.budget)}</b> в месяц${a.plan.months ? `, тогда всё закроется ${monthsFrom(a.plan.months)}` : ""}.`
+          : "Свободного остатка сейчас не хватает на досрочное погашение."}</p>
+        <p class="hint">Расчёт: свободный остаток ${money(a.avgFree)} − взнос в подушку ${money(a.cushion.monthly)} − запас на непредвиденное ${money(a.buffer)} (5% дохода).
+          Сначала вносятся минимальные платежи, остальное идёт в долг с самой высокой ставкой — так меньше переплата.
+          ${a.minOnly.months && a.plan.months && a.minOnly.totalInterest - a.plan.totalInterest > 100 ? `Если платить только минимум, проценты составят ${money(a.minOnly.totalInterest)} вместо ${money(a.plan.totalInterest)}.` : ""}
+          План работает, если не брать в долг заново — например, не тратить с кредитки больше, чем вносите.</p>
+        ${a.plan.budget > a.debtBudget + 0.5 && a.plan.minTotal > a.debtBudget ? `<div class="msg show err">Минимальные платежи (${money(a.plan.minTotal)}) больше свободного остатка после подушки. Возможно, стоит временно уменьшить взнос в подушку.</div>` : ""}`
+        : `<p class="hint" style="margin-top:0">Добавьте кредитку и долг человеку: сколько осталось, ставку и минимальный платёж. Остаток по кредитке удобно брать из приложения Т-Банка. Переводы в счёт долга отмечайте категорией «Погашение долгов» — остаток уменьшится сам.</p>`}
+    </section>
+
+    <section class="card ask">
+      <h2>Спросить Claude</h2>
+      <p class="hint" style="margin-top:0">Соберу короткую сводку: средние суммы по категориям, подушку и долги. Без описаний операций, номеров карт и имён.
+        Вы увидите текст целиком, скопируете его и вставите в чат с Claude или с любым другим ассистентом.</p>
+      <button type="button" id="ask-btn" style="margin-top:12px">Собрать сводку</button>
+    </section>
+    <p class="hint" style="text-align:center">Это расчёт по средним, а не финансовая консультация. Решения — за вами.</p>`;
+
+  const saveSetting = (key, el, num = true) => el.addEventListener("change", async () => { await S.setSetting(key, num ? +el.value || 0 : el.value); planPage(); });
+  saveSetting("cushionSaved", $("#cu-saved"));
+  saveSetting("cushionTarget", $("#cu-target"));
+  saveSetting("cushionMonths", $("#cu-months"));
+  $("#debt-add").addEventListener("click", () => debtForm());
+  $$(".debt-edit").forEach((b) => b.addEventListener("click", () => debtForm(debts.find((d) => d.id === b.dataset.id))));
+  $("#ask-btn").addEventListener("click", () => askClaude(a));
+}
+
+function openModal(html) {
+  const dlg = $("#modal");
+  dlg.querySelector(".modal-body").innerHTML = html;
+  if (!dlg.open) dlg.showModal();
+  return dlg;
+}
+function closeModal() { const d = $("#modal"); if (d.open) d.close(); }
+
+function debtForm(d = null) {
+  const today = new Date().toISOString().slice(0, 10);
+  const v = d || { type: "card", name: "", amount: "", asOf: today, rate: "", minPayment: "", dueDay: "", limit: "", note: "" };
+  const dlg = openModal(`
+    <h2>${d ? "Долг" : "Новый долг"}</h2>
+    <form id="debt-form" class="form-grid">
+      <label class="field">что это<select name="type">${Object.entries(DEBT_TYPES).map(([k, l]) => `<option value="${k}" ${k === v.type ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="field">название<input name="name" required value="${esc(v.name)}" placeholder="Кредитка Т-Банк"></label>
+      <label class="field">сколько должна, ₽<input name="amount" type="number" inputmode="decimal" min="0" step="0.01" required value="${v.amount}"></label>
+      <label class="field">на дату<input name="asOf" type="date" value="${v.asOf}"></label>
+      <label class="field card-only">ставка, % годовых<input name="rate" type="number" inputmode="decimal" min="0" step="0.1" value="${v.rate || ""}" placeholder="0"></label>
+      <label class="field card-only">минимальный платёж, ₽<input name="minPayment" type="number" inputmode="decimal" min="0" step="1" value="${v.minPayment || ""}"></label>
+      <label class="field card-only">платить до, число<input name="dueDay" type="number" inputmode="numeric" min="1" max="31" value="${v.dueDay || ""}"></label>
+      <label class="field only-card">кредитный лимит, ₽<input name="limit" type="number" inputmode="decimal" min="0" step="1" value="${v.limit || ""}"></label>
+      <p class="hint" style="grid-column:1/-1;margin:0">Платежи, отмеченные этим долгом после указанной даты, уменьшают остаток сами. Остаток по кредитке лучше время от времени сверять с приложением банка и обновлять здесь.</p>
+      <div class="row" style="grid-column:1/-1;justify-content:space-between">
+        ${d ? `<button type="button" class="danger" id="debt-del">Удалить</button>` : "<span></span>"}
+        <div class="row"><button type="button" class="secondary" id="debt-cancel">Отмена</button><button type="submit">Сохранить</button></div>
+      </div>
+    </form>`);
+  const form = dlg.querySelector("#debt-form");
+  const sync = () => {
+    const t = form.type.value;
+    form.querySelectorAll(".card-only").forEach((el) => (el.style.display = t === "person" ? "none" : ""));
+    form.querySelectorAll(".only-card").forEach((el) => (el.style.display = t === "card" ? "" : "none"));
+  };
+  form.type.addEventListener("change", sync); sync();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(form));
+    await S.saveDebt({ ...(d || {}), ...f, name: f.name.trim() });
+    closeModal(); planPage();
+  });
+  dlg.querySelector("#debt-cancel").addEventListener("click", closeModal);
+  dlg.querySelector("#debt-del")?.addEventListener("click", async () => {
+    if (!confirm(`Удалить «${d.name}»? Операции останутся, просто перестанут к нему относиться.`)) return;
+    await S.deleteDebt(d.id); closeModal(); planPage();
+  });
+}
+
+function askClaude(a) {
+  const text = claudeSummary(a);
+  const dlg = openModal(`
+    <h2>Сводка для Claude</h2>
+    <p class="hint" style="margin-top:0">Вот что уйдёт в чат — проверьте, всё ли вас устраивает. Можно отредактировать прямо здесь.</p>
+    <textarea id="ask-text" rows="14">${esc(text)}</textarea>
+    <div class="row" style="margin-top:12px;justify-content:space-between">
+      <button type="button" class="secondary" id="ask-close">Закрыть</button>
+      <div class="row">
+        <button type="button" id="ask-copy">Скопировать</button>
+        <a class="btn secondary" href="https://claude.ai/new" target="_blank" rel="noopener">Открыть Claude</a>
+      </div>
+    </div>
+    <div id="ask-msg" class="msg"></div>`);
+  dlg.querySelector("#ask-close").addEventListener("click", closeModal);
+  dlg.querySelector("#ask-copy").addEventListener("click", async () => {
+    const ta = dlg.querySelector("#ask-text");
+    try { await navigator.clipboard.writeText(ta.value); }
+    catch { ta.select(); document.execCommand("copy"); }
+    showMsg(dlg.querySelector("#ask-msg"), "ok", "Скопировано. Откройте чат с Claude и вставьте текст (Cmd+V).");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -409,8 +598,8 @@ async function limitsPage() {
       <p class="hint" style="margin-top:0">Если слово встречается в описании операции, она получает эту категорию
         (регистр не важен, через запятую). Операции, у которых вы меняли категорию вручную, пересчёт не трогает.</p>
       <p class="hint">Тип категории решает, как она входит в итоги. «Расход»: входящие деньги в ней уменьшают расход
-        (возврат покупки, чья-то доля за общую аренду). «Доход» — наоборот. «Между своими счетами» не входит ни в доходы, ни в расходы.</p>
-      ${cats.filter((c) => c.name !== OTHER).map((c) => `<div class="kw-row"><div class="limit-head"><span class="limit-name" style="font-size:21px">${dot(c)}${esc(c.name)}</span><select class="kind-select" data-cat="${esc(c.id)}" aria-label="Тип категории ${esc(c.name)}">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === (c.kind) ? "selected" : ""}>${l}</option>`).join("")}</select></div><textarea rows="2" data-cat="${esc(c.id)}" aria-label="Ключевые слова: ${esc(c.name)}">${esc(c.keywords)}</textarea></div>`).join("")}
+        (возврат покупки, чья-то доля за общую аренду). «Доход» — наоборот. «Между своими счетами» не входит ни в доходы, ни в расходы. «Обязательные» категории — основа расчёта подушки безопасности на странице «План».</p>
+      ${cats.filter((c) => c.name !== OTHER).map((c) => `<div class="kw-row"><div class="limit-head"><span class="limit-name" style="font-size:21px">${dot(c)}${esc(c.name)}</span><label class="ess"><input type="checkbox" class="ess-check" data-cat="${esc(c.id)}" ${c.essential ? "checked" : ""}> обязательная</label><select class="kind-select" data-cat="${esc(c.id)}" aria-label="Тип категории ${esc(c.name)}">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === (c.kind) ? "selected" : ""}>${l}</option>`).join("")}</select></div><textarea rows="2" data-cat="${esc(c.id)}" aria-label="Ключевые слова: ${esc(c.name)}">${esc(c.keywords)}</textarea></div>`).join("")}
       <div class="row" style="margin-top:12px"><button id="kw-btn">Сохранить и пересчитать</button></div>
       <div id="kw-msg" class="msg"></div>
     </div>`;
@@ -444,6 +633,9 @@ async function limitsPage() {
     for (const ta of $$("textarea[data-cat]")) {
       const kw = ta.value.split(",").map((w) => w.trim().toUpperCase()).filter(Boolean).join(",");
       if (kw !== byId.get(ta.dataset.cat).keywords) await S.updateCategory(ta.dataset.cat, { keywords: kw });
+    }
+    for (const cb of $$(".ess-check")) {
+      if (cb.checked !== !!byId.get(cb.dataset.cat).essential) await S.updateCategory(cb.dataset.cat, { essential: cb.checked });
     }
     for (const sel of $$(".kind-select")) {
       if (sel.value !== byId.get(sel.dataset.cat).kind) await S.updateCategory(sel.dataset.cat, { kind: sel.value });
@@ -645,7 +837,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v8";
+const APP_VERSION = "v9";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

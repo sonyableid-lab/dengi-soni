@@ -10,7 +10,7 @@ import {
 } from "./engine.js";
 
 const DB_NAME = "dengi-soni";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const FORMAT = "dengi-soni-backup";
 let dbp = null;
 
@@ -27,10 +27,13 @@ function open() {
     const r = indexedDB.open(DB_NAME, DB_VERSION);
     r.onupgradeneeded = () => {
       const db = r.result;
-      db.createObjectStore("operations", { keyPath: "hash" });
-      db.createObjectStore("categories", { keyPath: "id" });
-      db.createObjectStore("limits", { keyPath: "categoryId" });
-      db.createObjectStore("meta", { keyPath: "key" });
+      const make = (name, keyPath) => { if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath }); };
+      make("operations", "hash");
+      make("categories", "id");
+      make("limits", "categoryId");
+      make("meta", "key");
+      make("debts", "id");      // v2: долги
+      make("settings", "key");  // v2: настройки плана (подушка и т.п.), переносятся копией
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -94,14 +97,14 @@ async function migrateCategories(cats) {
     }
     if (!c.updatedAt) {
       // Вы её не меняли — просто заменить новой версией
-      out.push({ ...c, name: d.name, keywords: d.keywords, color: d.color, kind: d.kind, order: i });
+      out.push({ ...c, name: d.name, keywords: d.keywords, color: d.color, kind: d.kind, essential: d.essential, order: i });
     } else {
       // Вы её меняли — сохранить ваши слова, убрать те, что теперь у других категорий, добавить новые
       const others = new Set(DEFAULT_CATEGORIES.filter((x) => x.id !== d.id).flatMap((x) => splitWords(x.keywords).map((w) => w.toUpperCase())));
       const mine = splitWords(c.keywords).filter((w) => !others.has(w.toUpperCase()));
       const have = new Set(mine.map((w) => w.toUpperCase()));
       for (const w of splitWords(d.keywords)) if (!have.has(w.toUpperCase())) mine.push(w);
-      out.push({ ...c, keywords: mine.join(","), kind: c.kind || d.kind, order: i, updatedAt: now() });
+      out.push({ ...c, keywords: mine.join(","), kind: c.kind || d.kind, essential: c.essential ?? d.essential, order: i, updatedAt: now() });
     }
   });
   for (const c of cats) if (!c.id.startsWith("def:") && !c.kind) out.push({ ...c, kind: "expense" });
@@ -114,9 +117,11 @@ async function migrateCategories(cats) {
 // Чтение
 // ---------------------------------------------------------------------------
 const DEFAULT_KIND = new Map(DEFAULT_CATEGORIES.map((d) => [d.id, d.kind]));
+const DEFAULT_ESSENTIAL = new Map(DEFAULT_CATEGORIES.map((d) => [d.id, d.essential]));
 export async function categories() {
   return (await getAll("categories")).filter(alive)
-    .map((c) => (c.kind ? c : { ...c, kind: DEFAULT_KIND.get(c.id) || "expense" })).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ru"));
+    .map((c) => (c.kind ? c : { ...c, kind: DEFAULT_KIND.get(c.id) || "expense" }))
+    .map((c) => (c.essential !== undefined ? c : { ...c, essential: DEFAULT_ESSENTIAL.get(c.id) || false })).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ru"));
 }
 export async function operations() {
   return (await getAll("operations")).filter(alive);
@@ -294,6 +299,8 @@ export async function exportData() {
     operations: await getAll("operations"),
     categories: await getAll("categories"),
     limits: await getAll("limits"),
+    debts: await getAll("debts"),
+    settings: await getAll("settings"),
   };
 }
 
@@ -301,7 +308,7 @@ export async function exportData() {
 export async function mergeData(data) {
   if (!data || data.format !== FORMAT) throw new Error("Это не файл данных «Денег Сони».");
   const stat = {};
-  for (const [store, key] of [["operations", "hash"], ["categories", "id"], ["limits", "categoryId"]]) {
+  for (const [store, key] of [["operations", "hash"], ["categories", "id"], ["limits", "categoryId"], ["debts", "id"], ["settings", "key"]]) {
     const mine = new Map((await getAll(store)).map((x) => [x[key], x]));
     const take = [];
     for (const x of data[store] || []) {
@@ -317,8 +324,58 @@ export async function mergeData(data) {
 /** Полная очистка (для настроек). */
 export async function wipe() {
   const db = await open();
-  const tx = db.transaction(["operations", "categories", "limits", "meta"], "readwrite");
-  for (const s of ["operations", "categories", "limits", "meta"]) tx.objectStore(s).clear();
+  const all = ["operations", "categories", "limits", "meta", "debts", "settings"];
+  const tx = db.transaction(all, "readwrite");
+  for (const s of all) tx.objectStore(s).clear();
   await done(tx);
   await init();
+}
+
+// ---------------------------------------------------------------------------
+// Долги
+// ---------------------------------------------------------------------------
+// Долг: { id, type: "card" | "loan" | "person", name, amount, asOf, rate, minPayment,
+//         dueDay, limit, note, updatedAt, deleted }
+// amount — сколько вы должны на дату asOf. Платежи, привязанные к долгу
+// (operation.debtId) и сделанные с этой даты, уменьшают остаток.
+export async function debts() {
+  return (await getAll("debts")).filter(alive).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+export async function saveDebt(d) {
+  const t = now();
+  const id = d.id || "d:" + (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  const old = (await getAll("debts")).find((x) => x.id === id);
+  const debt = {
+    ...(old || { createdAt: t }), ...d, id,
+    amount: Math.max(0, +d.amount || 0), rate: Math.max(0, +d.rate || 0),
+    minPayment: Math.max(0, +d.minPayment || 0), limit: Math.max(0, +d.limit || 0),
+    dueDay: d.dueDay ? Math.min(31, Math.max(1, +d.dueDay)) : null,
+    asOf: d.asOf || new Date().toISOString().slice(0, 10), updatedAt: t,
+  };
+  await putMany("debts", [debt]);
+  return debt;
+}
+
+export async function deleteDebt(id) {
+  const d = (await getAll("debts")).find((x) => x.id === id);
+  if (d) await putMany("debts", [{ ...d, deleted: true, updatedAt: now() }]);
+}
+
+/** Привязать операцию к долгу (или отвязать: debtId = ""). */
+export async function setOperationDebt(hash, debtId) {
+  const op = (await getAll("operations")).find((o) => o.hash === hash);
+  if (!op) throw new Error("Операция не найдена.");
+  await putMany("operations", [{ ...op, debtId: debtId || "", updatedAt: now() }]);
+}
+
+// ---------------------------------------------------------------------------
+// Настройки плана (переносятся вместе с копией)
+// ---------------------------------------------------------------------------
+export async function getSetting(key, fallback = null) {
+  const r = (await getAll("settings")).find((x) => x.key === key);
+  return r ? r.value : fallback;
+}
+export async function setSetting(key, value) {
+  await putMany("settings", [{ key, value, updatedAt: now() }]);
 }

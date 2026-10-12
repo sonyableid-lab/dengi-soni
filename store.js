@@ -86,7 +86,7 @@ export async function init() {
 async function healCategories() {
   const cats = await getAll("categories");
   const ver = (await getMeta("catVersion")) || 1;
-  const stale = cats.some((c) => c.id.startsWith("def:") && !c.deleted && (c.schema || 0) < CATEGORIES_VERSION);
+  const stale = cats.some((c) => !c.deleted && (c.schema || 0) < CATEGORIES_VERSION);
   if (ver < CATEGORIES_VERSION || stale || DEFAULT_CATEGORIES.some((d) => !cats.find((c) => c.id === d.id))) {
     await migrateCategories(cats);
   }
@@ -122,7 +122,12 @@ async function migrateCategories(cats) {
       order: i, schema: CATEGORIES_VERSION, updatedAt: t,
     });
   });
-  for (const c of cats) if (!c.id.startsWith("def:") && !c.kind) out.push({ ...c, kind: "expense", updatedAt: t });
+  // Ваши собственные категории: раньше им по умолчанию ставился тип «Расход», из-за чего
+  // поступления в них (например, зарплата) вычитались из трат. Теперь — «смотря по операции».
+  for (const c of cats) {
+    if (c.id.startsWith("def:") || (c.schema || 0) >= CATEGORIES_VERSION) continue;
+    out.push({ ...c, kind: !c.kind || c.kind === "expense" ? "both" : c.kind, schema: CATEGORIES_VERSION, updatedAt: t });
+  }
   await putMany("categories", out);
   await setMeta("catVersion", CATEGORIES_VERSION);
 }
@@ -297,7 +302,7 @@ export async function deleteOperation(hash) {
 // ---------------------------------------------------------------------------
 const PALETTE = ["#7C9A3A", "#9B7BC9", "#C7739A", "#3E8A7C", "#C9973B", "#5B79AE", "#A27E5A", "#6C9E6A", "#8A63B8", "#D3A2B9"];
 
-export async function createCategory(name, keywords = "", kind = "expense") {
+export async function createCategory(name, keywords = "", kind = "both") {
   name = name.trim();
   if (!name) throw new Error("Введите название категории.");
   const cats = await categories();
@@ -306,7 +311,7 @@ export async function createCategory(name, keywords = "", kind = "expense") {
   const otherOrder = (cats.find((c) => c.name === OTHER) || { order: 999 }).order;
   const cat = {
     id, name, keywords: keywords.split(",").map((w) => w.trim().toUpperCase()).filter(Boolean).join(","),
-    color: PALETTE[cats.length % PALETTE.length], kind, order: otherOrder - 0.5, updatedAt: now(),
+    color: PALETTE[cats.length % PALETTE.length], kind, schema: CATEGORIES_VERSION, order: otherOrder - 0.5, updatedAt: now(),
   };
   await putMany("categories", [cat]);
   return cat;

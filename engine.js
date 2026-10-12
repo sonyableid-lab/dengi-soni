@@ -46,7 +46,7 @@ export const DEFAULT_CATEGORIES = [
   C("Между своими счетами", "ПЕРЕВОД СЕБЕ,ПЕРЕВОД С ДОГОВОРА,ВНУТРЕННИЙ ПЕРЕВОД,МЕЖДУ СВОИМИ СЧЕТАМИ,ПОГАШЕНИЕ ПРОСРОЧЕННОЙ", "#B9B6A6", "transfer"),
   C("Прочее", "", "#C9C6B8", "both"),
 ];
-export const CATEGORIES_VERSION = 6;
+export const CATEGORIES_VERSION = 7;
 export const KIND_LABELS = { expense: "Расход", income: "Доход", both: "Смотря по операции", debt: "Платёж по долгу", transfer: "Между своими счетами" };
 
 /** Вклад операции в итоги с учётом типа категории: { income, expense, debt } (могут быть < 0 — возвраты). */

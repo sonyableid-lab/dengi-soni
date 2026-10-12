@@ -361,3 +361,4 @@ body.dropping::after {
 }
 
 .src-tag { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; background: #E9DDF0; color: #4E2E5C; }
+.src-tag.refund { background: var(--salad-soft); color: var(--salad-ink); }

@@ -266,7 +266,7 @@ function opItem(o, cat, withSelect, cats = []) {
   return `<li class="${excluded ? "excluded" : ""}" data-hash="${esc(o.hash)}">
     <span class="d" title="${esc(o.description)}">${esc(o.description) || "—"}</span>
     <span class="a" ${excluded ? 'title="Не входит в доходы и расходы"' : ""}>${amount}</span>
-    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${o.accountType === "credit" ? `<span class="src-tag">кредитка</span>` : ""}${catHtml}${debtSel}${noteBtn}</span>
+    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${o.accountType === "credit" ? `<span class="src-tag">кредитка</span>` : ""}${o.kind === "income" && cat.kind === "expense" ? `<span class="src-tag refund" title="Поступление в категорию расходов уменьшает траты, а не считается доходом">уменьшает траты</span>` : ""}${o.kind === "income" && cat.kind === "transfer" ? `<span class="src-tag">не доход</span>` : ""}${catHtml}${debtSel}${noteBtn}</span>
     ${o.note ? `<span class="note">${esc(o.note)}</span>` : ""}
   </li>`;
 }
@@ -600,7 +600,7 @@ async function limitsPage() {
       <div class="row">
         <input type="text" id="nc-name" placeholder="Название, напр. Хобби" style="min-width:170px">
         <input type="text" id="nc-kw" placeholder="Ключевые слова через запятую" style="flex:1;min-width:200px">
-        <select id="nc-kind" aria-label="Тип категории">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === ("expense") ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <select id="nc-kind" aria-label="Тип категории">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === ("both") ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button id="nc-btn">Добавить категорию</button>
       </div>
       <div class="cat-chips">
@@ -874,7 +874,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

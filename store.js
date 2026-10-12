@@ -74,12 +74,23 @@ export async function init() {
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch {}
   const cats = await getAll("categories");
   if (!cats.length) {
-    await putMany("categories", DEFAULT_CATEGORIES.map((d, i) => ({ ...d, order: i, updatedAt: 0 })));
+    await putMany("categories", DEFAULT_CATEGORIES.map((d, i) => ({ ...d, order: i, schema: CATEGORIES_VERSION, updatedAt: 0 })));
     await setMeta("catVersion", CATEGORIES_VERSION);
     return;
   }
+  await healCategories();
+}
+
+/** Проверить, что категории в актуальном формате (в том числе после открытия
+ *  старой копии), и пересчитать категории операций, которые вы не меняли вручную. */
+async function healCategories() {
+  const cats = await getAll("categories");
   const ver = (await getMeta("catVersion")) || 1;
-  if (ver < CATEGORIES_VERSION) await migrateCategories(cats);
+  const stale = cats.some((c) => c.id.startsWith("def:") && !c.deleted && (c.schema || 0) < CATEGORIES_VERSION);
+  if (ver < CATEGORIES_VERSION || stale || DEFAULT_CATEGORIES.some((d) => !cats.find((c) => c.id === d.id))) {
+    await migrateCategories(cats);
+  }
+  await reclassifyAll();
 }
 
 const splitWords = (s) => (s || "").split(",").map((w) => w.trim()).filter(Boolean);
@@ -87,30 +98,50 @@ const splitWords = (s) => (s || "").split(",").map((w) => w.trim()).filter(Boole
 /** Обновить стартовые категории до новой версии, не трогая ваши правки. */
 async function migrateCategories(cats) {
   const byId = new Map(cats.map((c) => [c.id, c]));
-  const aliveNames = new Set(cats.filter(alive).map((c) => c.name.toLowerCase()));
+  const aliveNames = new Set(cats.filter(alive).filter((c) => !c.id.startsWith("def:")).map((c) => c.name.toLowerCase()));
+  const t = now();
   const out = [];
   DEFAULT_CATEGORIES.forEach((d, i) => {
     const c = byId.get(d.id);
     if (!c) {
-      if (!aliveNames.has(d.name.toLowerCase())) out.push({ ...d, order: i, updatedAt: 0 });
+      if (!aliveNames.has(d.name.toLowerCase())) out.push({ ...d, order: i, schema: CATEGORIES_VERSION, updatedAt: t });
       return;
     }
-    if (!c.updatedAt) {
-      // Вы её не меняли — просто заменить новой версией
-      out.push({ ...c, name: d.name, keywords: d.keywords, color: d.color, kind: d.kind, essential: d.essential, order: i });
-    } else {
-      // Вы её меняли — сохранить ваши слова, убрать те, что теперь у других категорий, добавить новые
-      const others = new Set(DEFAULT_CATEGORIES.filter((x) => x.id !== d.id).flatMap((x) => splitWords(x.keywords).map((w) => w.toUpperCase())));
-      const mine = splitWords(c.keywords).filter((w) => !others.has(w.toUpperCase()));
-      const have = new Set(mine.map((w) => w.toUpperCase()));
-      for (const w of splitWords(d.keywords)) if (!have.has(w.toUpperCase())) mine.push(w);
-      out.push({ ...c, keywords: mine.join(","), kind: c.kind || d.kind, essential: c.essential ?? d.essential, order: i, updatedAt: now() });
-    }
+    if ((c.schema || 0) >= CATEGORIES_VERSION) return; // уже в новом формате
+    // Ваши слова сохраняем, но убираем те, что теперь принадлежат другим категориям, и добавляем новые.
+    const others = new Set(DEFAULT_CATEGORIES.filter((x) => x.id !== d.id).flatMap((x) => splitWords(x.keywords).map((w) => w.toUpperCase())));
+    const mine = c.updatedAt ? splitWords(c.keywords).filter((w) => !others.has(w.toUpperCase())) : [];
+    const have = new Set(mine.map((w) => w.toUpperCase()));
+    for (const w of splitWords(d.keywords)) if (!have.has(w.toUpperCase())) mine.push(w);
+    // Название и цвет стартовых категорий всегда берём новые (переименовать их в приложении нельзя).
+    // Тип и «обязательность» сохраняем, только если их выбирали вы в новой версии (есть schema).
+    out.push({
+      ...c, name: d.name, color: d.color, keywords: mine.join(","),
+      kind: c.schema && c.kind ? c.kind : d.kind,
+      essential: c.schema && c.essential !== undefined ? c.essential : d.essential,
+      order: i, schema: CATEGORIES_VERSION, updatedAt: t,
+    });
   });
-  for (const c of cats) if (!c.id.startsWith("def:") && !c.kind) out.push({ ...c, kind: "expense" });
+  for (const c of cats) if (!c.id.startsWith("def:") && !c.kind) out.push({ ...c, kind: "expense", updatedAt: t });
   await putMany("categories", out);
   await setMeta("catVersion", CATEGORIES_VERSION);
-  await reclassifyAll();
+}
+
+/** Вернуть стартовые категории к стандартному виду. Ваши собственные категории остаются.
+ *  resetManual — забыть и ручные выборы категорий у операций. */
+export async function resetCategories(resetManual = false) {
+  const t = now();
+  const cats = await getAll("categories");
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  await putMany("categories", DEFAULT_CATEGORIES.map((d, i) => ({
+    ...(byId.get(d.id) || {}), ...d, deleted: false, order: i, schema: CATEGORIES_VERSION, updatedAt: t,
+  })));
+  if (resetManual) {
+    const ops = (await getAll("operations")).filter((o) => o.manual);
+    await putMany("operations", ops.map((o) => ({ ...o, manual: false, updatedAt: t })));
+  }
+  await setMeta("catVersion", CATEGORIES_VERSION);
+  return reclassifyAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +315,7 @@ export async function createCategory(name, keywords = "", kind = "expense") {
 export async function updateCategory(id, fields) {
   const c = (await getAll("categories")).find((c) => c.id === id);
   if (!c) throw new Error("Категория не найдена.");
-  await putMany("categories", [{ ...c, ...fields, updatedAt: now() }]);
+  await putMany("categories", [{ ...c, ...fields, schema: Math.max(c.schema || 0, CATEGORIES_VERSION), updatedAt: now() }]);
 }
 
 /** Удаление: операции категории → «Прочее», лимит снимается. */
@@ -334,6 +365,8 @@ export async function mergeData(data) {
     await putMany(store, take);
     stat[store] = take.length;
   }
+  // Копия могла быть сделана старой версией — приводим категории к новому виду
+  await healCategories();
   return stat;
 }
 

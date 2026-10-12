@@ -619,7 +619,18 @@ async function limitsPage() {
       ${cats.filter((c) => c.name !== OTHER).map((c) => `<div class="kw-row"><div class="limit-head"><span class="limit-name" style="font-size:21px">${dot(c)}${esc(c.name)}</span><label class="ess"><input type="checkbox" class="ess-check" data-cat="${esc(c.id)}" ${c.essential ? "checked" : ""}> обязательная</label><select class="kind-select" data-cat="${esc(c.id)}" aria-label="Тип категории ${esc(c.name)}">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === (c.kind) ? "selected" : ""}>${l}</option>`).join("")}</select></div><textarea rows="2" data-cat="${esc(c.id)}" aria-label="Ключевые слова: ${esc(c.name)}">${esc(c.keywords)}</textarea></div>`).join("")}
       <div class="row" style="margin-top:12px"><button id="kw-btn">Сохранить и пересчитать</button></div>
       <div id="kw-msg" class="msg"></div>
-    </div>`;
+    </div>
+
+    <details class="card">
+      <summary>Если категории запутались</summary>
+      <p class="hint">Вернёт стандартные категории и их ключевые слова, затем заново разложит операции. Ваши собственные категории, лимиты, долги и заметки останутся.</p>
+      <div class="row" style="margin-top:12px">
+        <button type="button" id="reset-cats" class="secondary">Вернуть стандартные категории</button>
+        <button type="button" id="reset-all" class="danger">…и забыть мои ручные выборы</button>
+      </div>
+      <p class="hint">Вторая кнопка также отменит категории, которые вы ставили операциям вручную (например, аренду) — их придётся поставить заново.</p>
+      <div id="reset-msg" class="msg"></div>
+    </details>`;
 
   bindMonthSelect(limitsPage);
   $$("#view .limit-name[data-cat]").forEach((b) => b.addEventListener("click", () => goCategory(b.dataset.cat)));
@@ -645,6 +656,15 @@ async function limitsPage() {
     const n = await S.deleteCategory(b.dataset.cat);
     limitsPage().then(() => showMsg($("#cat-msg"), "ok", `Удалено. Операций перенесено в «Прочее»: ${n}.`));
   }));
+  for (const [id, manual] of [["#reset-cats", false], ["#reset-all", true]]) {
+    $(id).addEventListener("click", async () => {
+      if (manual && !confirm("Сбросить и ручные выборы категорий у всех операций?")) return;
+      const n = await S.resetCategories(manual);
+      await limitsPage();
+      const msg = $("#reset-msg"); msg.closest("details").open = true;
+      showMsg(msg, "ok", `Готово. Категория изменилась у операций: ${n}.`);
+    });
+  }
   $("#kw-btn").addEventListener("click", async () => {
     const byId = new Map(cats.map((c) => [c.id, c]));
     for (const ta of $$("textarea[data-cat]")) {
@@ -854,7 +874,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

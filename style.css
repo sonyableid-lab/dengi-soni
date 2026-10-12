@@ -287,3 +287,12 @@ details.card summary { cursor: pointer; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .hero-sum, .flow b, .op-list .a, .summary-line b, .op-list li.day-head { font-variant-numeric: lining-nums proportional-nums; }
 .btn { text-decoration: none; }
+
+/* Подсказка при перетаскивании файла в окно */
+body.dropping::after {
+  content: "Отпустите файл — загружу его";
+  position: fixed; inset: 12px; z-index: 100; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 36px; color: var(--forest);
+  background: rgba(220, 208, 239, .88); border: 2px dashed var(--violet); border-radius: var(--r-lg);
+}

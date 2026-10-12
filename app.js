@@ -479,6 +479,53 @@ async function saveBackup() {
   return true;
 }
 
+/** Загрузить файлы (выписки или копию) и вернуть итог текстом. */
+async function importFiles(files) {
+  const lines = [];
+  let ok = true;
+  for (const f of files) {
+    try {
+      const r = await importFile(f);
+      if (r.backup) lines.push(`${f.name}: копия загружена — обновлено операций ${r.backup.operations}, категорий ${r.backup.categories}`);
+      else lines.push(`${f.name}: найдено ${r.parsed}, добавлено ${r.added}${r.duplicates ? `, уже были ${r.duplicates}` : ""}`);
+    } catch (e) { ok = false; lines.push(`Не получилось: ${f.name}: ${e.message}`); }
+  }
+  return { ok, text: lines.join("\n") };
+}
+
+// Файлы можно бросить в любое место окна или вставить через Cmd+V.
+// Нужно для веб-приложения из Dock в Safari: там окно выбора файлов
+// не открывается (ошибка Safari), а перетаскивание и вставка работают.
+let dragDepth = 0;
+function setDropOverlay(on) { document.body.classList.toggle("dropping", on); }
+document.addEventListener("dragenter", (e) => {
+  if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+  dragDepth++; setDropOverlay(true);
+});
+document.addEventListener("dragleave", () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) setDropOverlay(false); });
+document.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault(); });
+document.addEventListener("drop", async (e) => {
+  dragDepth = 0; setDropOverlay(false);
+  const files = [...(e.dataTransfer?.files || [])];
+  if (!files.length) return;
+  e.preventDefault();
+  await globalImport(files);
+});
+document.addEventListener("paste", async (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length) return;
+  e.preventDefault();
+  await globalImport(files);
+});
+async function globalImport(files) {
+  toast("Читаю файл…");
+  const { ok, text } = await importFiles(files);
+  await render();
+  const msg = $("#imp-msg");
+  if (msg) showMsg(msg, ok ? "ok" : "err", text, true);
+  toast(text.split("\n").join(" · "));
+}
+
 async function importPage() {
   const [ops, lastBackup] = await Promise.all([S.operations(), S.getMeta("lastBackupAt")]);
   const fmt = (t) => t ? new Date(t).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "ещё не сохранялась";
@@ -489,7 +536,8 @@ async function importPage() {
       <label class="drop" id="drop">
         <input type="file" id="file" class="file-hidden" accept=".pdf,.csv,.json" multiple>
         <span class="big">Выбрать выписки</span>
-        <span class="small">PDF или CSV из Т-Банка, можно несколько сразу. На компьютере — просто перетащите сюда.</span>
+        <span class="small">PDF или CSV из Т-Банка, можно несколько сразу. На Mac проще перетащить файл в окно
+        или скопировать его в Finder (Cmd+C) и вставить сюда (Cmd+V).</span>
       </label>
       <div id="imp-msg" class="msg"></div>
       <p class="hint">Повторная загрузка той же выписки безопасна: уже добавленные операции пропускаются.
@@ -506,6 +554,7 @@ async function importPage() {
         <button type="button" id="restore-btn" class="secondary">Открыть копию</button>
         <input type="file" id="restore" class="file-hidden" tabindex="-1" aria-hidden="true">
       </div>
+      <p class="hint">Если кнопка «Открыть копию» не открывает окно (так бывает в приложении из Dock), перетащите файл копии в окно приложения.</p>
       <p class="hint">Последняя копия: ${fmt(lastBackup)}. Сейчас в приложении ${ops.length} ${plural(ops.length, "операция", "операции", "операций")}.</p>
       <div id="bk-msg" class="msg"></div>
     </div>
@@ -528,21 +577,13 @@ async function importPage() {
   const handle = async (files) => {
     const msg = $("#imp-msg");
     showMsg(msg, "info", "Читаю…");
-    const lines = [];
-    let ok = true;
-    for (const f of files) {
-      try {
-        const r = await importFile(f);
-        if (r.backup) lines.push(`${f.name}: копия загружена — обновлено операций ${r.backup.operations}, категорий ${r.backup.categories}`);
-        else lines.push(`${f.name}: найдено ${r.parsed}, добавлено ${r.added}${r.duplicates ? `, уже были ${r.duplicates}` : ""}`);
-      } catch (e) { ok = false; lines.push(`Не получилось: ${f.name}: ${e.message}`); }
-    }
-    showMsg(msg, ok ? "ok" : "err", lines.join("\n"), true);
+    const { ok, text } = await importFiles(files);
+    showMsg(msg, ok ? "ok" : "err", text, true);
   };
   $("#file").addEventListener("change", (e) => { handle([...e.target.files]); e.target.value = ""; });
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handle([...e.dataTransfer.files]); });
+  drop.addEventListener("drop", (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove("over"); handle([...e.dataTransfer.files]); });
 
   $("#save-btn").addEventListener("click", async () => {
     try {
@@ -571,7 +612,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v5";
+const APP_VERSION = "v6";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

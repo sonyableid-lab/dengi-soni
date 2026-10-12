@@ -72,6 +72,7 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
   const n = months.length;
 
   const per = new Map(); // id категории → { cat, byMonth: {m: сумма расходов} }
+  const perIncome = new Map(), perDebt = new Map(); // id категории → { cat, total }
   let income = 0, essential = 0, otherExp = 0, debtPay = 0;
   const monthly = Object.fromEntries(months.map((m) => [m, { income: 0, expense: 0, debt: 0 }]));
   for (const o of ops) {
@@ -87,6 +88,11 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
       x.byMonth[m] = (x.byMonth[m] || 0) + v.expense;
       per.set(c.id, x);
     }
+    for (const [key, val] of [["income", v.income], ["debt", v.debt]]) {
+      if (!val) continue;
+      const map = key === "income" ? perIncome : perDebt;
+      map.set(c.id, { cat: c, total: (map.get(c.id)?.total || 0) + val });
+    }
   }
   const avg = (x) => (n ? x / n : 0);
   const avgIncome = avg(income), avgEssential = avg(essential), avgOther = avg(otherExp), avgDebt = avg(debtPay);
@@ -99,7 +105,9 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
     const a = avg(total);
     const last = byMonth[lastM] || 0;
     return { cat, avg: a, last, change: a > 0 ? (last - a) / a : 0 };
-  }).filter((x) => x.avg > 0.5).sort((a, b) => b.avg - a.avg);
+  }).filter((x) => Math.abs(x.avg) > 0.5).sort((a, b) => b.avg - a.avg);
+  const listOf = (map) => [...map.values()].map((x) => ({ cat: x.cat, avg: avg(x.total) })).filter((x) => Math.abs(x.avg) > 0.5).sort((a, b) => b.avg - a.avg);
+  const incomeCats = listOf(perIncome), debtCats = listOf(perDebt);
 
   // Подушка безопасности
   const saved = +settings.cushionSaved || 0;
@@ -125,7 +133,7 @@ export function analyze({ ops, cats, debts = [], settings = {}, today = new Date
   return {
     months, n,
     avgIncome, avgEssential, avgOther, avgDebt, avgFree, monthly,
-    categories,
+    categories, incomeCats, debtCats,
     cushion: { saved, target, target3: avgEssential * 3, target6: avgEssential * 6, targetMonthsOfExpenses, collectIn, monthly: cushionMonthly, capped: cushionCapped, left: cushionLeft },
     debts: debtList, totalDebt, buffer, debtBudget, plan, minOnly,
   };
@@ -147,7 +155,10 @@ export function claudeSummary(a, today = new Date()) {
   L.push(`Свободный остаток в месяц: ${rub(a.avgFree)}`);
   L.push("");
   L.push("Траты по категориям (среднее в месяц → последний месяц):");
-  for (const c of a.categories) L.push(`- ${c.cat.name}${c.cat.essential ? " (обязательная)" : ""}: ${rub(c.avg)} → ${rub(c.last)}`);
+  for (const c of a.categories.filter((c) => c.avg > 0)) L.push(`- ${c.cat.name}${c.cat.essential ? " (обязательная)" : ""}: ${rub(c.avg)} → ${rub(c.last)}`);
+  const back = a.categories.filter((c) => c.avg < 0);
+  if (back.length) L.push(`(Траты уже уменьшены на то, что мне возвращают друзья за общие чеки: в среднем ${rub(-back.reduce((s, c) => s + c.avg, 0))} в месяц.)`);
+  if (a.incomeCats.length) { L.push(""); L.push("Доходы по источникам (среднее в месяц):"); for (const c of a.incomeCats) L.push(`- ${c.cat.name}: ${rub(c.avg)}`); }
   L.push("");
   L.push("По месяцам (доход / траты / платежи по долгам):");
   for (const m of a.months) { const x = a.monthly[m]; L.push(`- ${monthName(m)} ${m.slice(0, 4)}: ${rub(x.income)} / ${rub(x.expense)} / ${rub(x.debt)}`); }

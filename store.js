@@ -140,23 +140,39 @@ async function otherId() {
 /** records — результат parsePdf/parseCsv. Добавляет новые, повторы пропускает. */
 export async function importRecords(records, filename) {
   await assignHashes(records);
+  // Номера кредитных карт запоминаем: следующая выписка с этой карты узнается, даже если в ней нет процентов
+  const creditCards = new Set(await getSetting("creditCards", []));
+  if (records.some((r) => r.accountType === "credit")) {
+    for (const r of records) if (r.account) creditCards.add(r.account);
+    await setSetting("creditCards", [...creditCards]);
+  } else if (records.some((r) => r.account && creditCards.has(r.account))) {
+    for (const r of records) r.accountType = "credit";
+  }
   const cats = await categories();
   const index = buildKeywordIndex(cats);
   const other = await otherId();
   const existing = new Set((await getAll("operations")).map((o) => o.hash)); // и удалённые тоже
   const t = now();
   const fresh = [];
+  const all = new Map((await getAll("operations")).map((o) => [o.hash, o]));
+  const patched = [];
   for (const r of records) {
-    if (existing.has(r.hash)) continue;
+    if (existing.has(r.hash)) {
+      // Уже есть — но если раньше не знали, с какой это карты, допишем
+      const o = all.get(r.hash);
+      if (o && r.accountType && !o.accountType) patched.push({ ...o, accountType: r.accountType, contract: r.contract || "", updatedAt: t });
+      continue;
+    }
     existing.add(r.hash);
     fresh.push({
       hash: r.hash, date: r.date, description: r.description, amount: r.amount,
-      kind: r.kind, account: r.account || "", categoryId: classify(r.description, index) || other,
+      kind: r.kind, account: r.account || "", accountType: r.accountType || "", contract: r.contract || "",
+      categoryId: classify(r.description, index) || other,
       manual: false, source: filename, createdAt: t, updatedAt: t,
     });
   }
-  await putMany("operations", fresh);
-  return { parsed: records.length, added: fresh.length, duplicates: records.length - fresh.length };
+  await putMany("operations", fresh.concat(patched));
+  return { parsed: records.length, added: fresh.length, duplicates: records.length - fresh.length, accountType: records[0]?.accountType || "" };
 }
 
 // ---------------------------------------------------------------------------

@@ -17,8 +17,8 @@ const E = (name, keywords, color) => C(name, keywords, color, "expense", "def:" 
 export const DEFAULT_CATEGORIES = [
   E("Продукты", "МАГНИТ,MAGNIT,ПЯТЁРОЧКА,ПЯТЕРОЧКА,PYATEROCHKA,ПЕРЕКРЁСТОК,ПЕРЕКРЕСТОК,PEREKRESTOK,ЛЕНТА,LENTA,АШАН,AUCHAN,ВКУСВИЛЛ,VKUSVILL,VV_,ДИКСИ,СПАР,SPAR,МЕТРО,АЗБУКА ВКУСА,ПРОДУКТЫ,ATAK,САМБЕРУ,SAMOKAT", "#8DB255"),
   C("Кафе и рестораны", "РЕСТОРАН,КАФЕ,КОФЕЙНЯ,КОФЕ,ПИЦЦА,СУШИ,РОЛЛЫ,СТОЛОВАЯ,БУРГЕР,MCDONALDS,DODO,KFC,ВКУСНО И ТОЧКА,ШОКОЛАДНИЦА,ЯНДЕКС.ЕДА,YANDEX EDA,DELIVERY,СБЕРМАРКЕТ,MEALTY,DONER,ДОНЕР,SHAURMA,ШАУРМА,EATANDSPLIT,WU SHU", "#D98BAE"),
-  E("Транспорт", "ТАКСИ,YANDEX GO,ЯНДЕКС GO,YANDEX*GO,YANDEX.TAXI,ЯНДЕКС.ТАКСИ,UBER,ТРОЙКА,ЦППК,CPPK,РЖД,RUSSIAN RAILWAYS,АЭРОФЛОТ,AEROFLOT,ПОБЕДА,АЗС,БЕНЗИН,ГАЗПРОМНЕФТЬ,ЛУКОЙЛ,LUKOIL,СИТИДРАЙВ,ВЕЛОБАЙК,ПАРКОВКА,YANDEX.SCOOTER,GO SCOOTER,MOSKVA METRO,MOS.TRANSPORT,NOVOPODREZKOVO,MOSSELMASH,LIANOZOVO,PAVELETSKAYA", "#6A4E9E"),
-  E("Аренда и ЖКХ", "АРЕНДА,КВАРТПЛАТА,ЖКХ,ЕИРЦ,МОСЭНЕРГО,ЭНЕРГОСБЫТ,МОСГАЗ,МОСВОДОКАНАЛ", "#4A3772"),
+  E("Транспорт", "ТАКСИ,YANDEX GO,ЯНДЕКС GO,YANDEX*GO,YANDEX.TAXI,ЯНДЕКС.ТАКСИ,UBER,ТРОЙКА,ЦППК,CPPK,РЖД,RUSSIAN RAILWAYS,АЭРОФЛОТ,AEROFLOT,ПОБЕДА,АЗС,БЕНЗИН,ГАЗПРОМНЕФТЬ,ЛУКОЙЛ,LUKOIL,СИТИДРАЙВ,ВЕЛОБАЙК,ПАРКОВКА,YANDEX.SCOOTER,GO SCOOTER,MOSKVA METRO,MOS.TRANSPORT,NOVOPODREZKOVO,MOSSELMASH,LIANOZOVO,PAVELETSKAYA,МЕТРО МОСКВЫ", "#6A4E9E"),
+  E("Аренда и ЖКХ", "АРЕНДА,КВАРТПЛАТА,ЖКХ,ЕИРЦ,МОСЭНЕРГО,ЭНЕРГОСБЫТ,МОСГАЗ,МОСВОДОКАНАЛ,ОБЩЕЖИТИ", "#4A3772"),
   C("Дом и быт", "IKEA,ЛЕРУА МЕРЛЕН,ХОФФ,М.ВИДЕО,МВИДЕО,MVIDEO,ЭЛЬДОРАДО,DNS,СИТИЛИНК,РЕМОНТ,МЕБЕЛЬ,FIXPRICE,FIX PRICE", "#B39368"),
   C("Одежда и покупки", "WILDBERRIES,ОЗОН,OZON,ЛАМОДА,LAMODA,ZARA,H&M,UNIQLO,GLORIA JEANS,АЛИЭКСПРЕСС,ALIEXPRESS,FAMILIA", "#E2B64E"),
   C("Красота и уход", "ЗОЛОТОЕ ЯБЛОКО,GOLDAPPLE,ЛЭТУАЛЬ,LETOILE,РИВ ГОШ,RIVE GAUCHE,ПОДРУЖКА,МАГНИТ КОСМЕТИК,MAGNIT KOSMETIK,УЛЫБКА РАДУГИ,САЛОН КРАСОТЫ,BARBER", "#E7A6C4"),
@@ -32,17 +32,21 @@ export const DEFAULT_CATEGORIES = [
   C("Путешествия", "OSTROVOK,ОТЕЛЬ,HOTEL,BOOKING,АВИАБИЛЕТ,TINKOFF TRAVEL", "#6FB3C4"),
   C("Питомцы", "ZOOMAGAZIN,ЗООМАГАЗИН,ЧЕТЫРЕ ЛАПЫ,4 LAPY", "#B8CF5A"),
   C("Наличные", "СНЯТИЕ НАЛИЧНЫХ", "#A6A396"),
-  C("Проценты и комиссии", "ПЛАТА ЗА ОБСЛУЖИВАНИЕ,КОМИССИЯ,ПРОЦЕНТЫ ПО КРЕДИТУ,ПРОЦЕНТЫ ЗА ПОЛЬЗОВАНИЕ,ШТРАФ,НЕУСТОЙКА", "#A0616A"),
+  C("Проценты и комиссии", "ПЛАТА ЗА ОБСЛУЖИВАНИЕ,ПЛАТА ЗА ПРЕДОСТАВЛЕНИЕ,ЗАЩИТА КАРТЫ,КОМИССИЯ,ПРОЦЕНТЫ ПО КРЕДИТУ,ПРОЦЕНТЫ ЗА ПОЛЬЗОВАНИЕ,ШТРАФ,НЕУСТОЙКА", "#A0616A"),
   C("Погашение долгов", "ПОГАШЕНИЕ КРЕДИТА,ПОГАШЕНИЕ ЗАДОЛЖЕННОСТИ,ВОЗВРАТ ДОЛГА", "#7B4A86", "debt"),
   C("Переводы людям", "ВНЕШНИЙ ПЕРЕВОД,ПЕРЕВОД ПО НОМЕРУ,ПЕРЕВОД,СБП,ВНЕСЕНИЕ НАЛИЧНЫХ", "#8C8FA8", "both", "def:Переводы"),
   C("Зарплата", "БАНКА ВТБ,ЗАЧИСЛЕНИЕ ЗАРПЛАТЫ,ЗАРПЛАТА,АВАНС", "#2F6B45", "income"),
   C("Подработка", "", "#6B9C3A", "income"),
-  C("Пополнение", "ПОПОЛНЕНИЕ,ЗАЧИСЛЕНИЕ", "#9DBF6A", "income"),
+  C("Деньги от близких", "", "#5E9A6E", "income"),
+  C("Другие поступления", "ПОПОЛНЕНИЕ,ЗАЧИСЛЕНИЕ", "#9DBF6A", "income", "def:Пополнение"),
+  // Входящие переводы по СБП — обычно друзья возвращают свою часть общего чека.
+  // Это не доход: такие деньги уменьшают ваши траты.
+  C("Мне скинули", "СИСТЕМА БЫСТРЫХ ПЛАТЕЖЕЙ,ПОПОЛНЕНИЕ ПО СБП", "#B7A3D9"),
   C("Кэшбэк и проценты", "КЭШБЭК,CASHBACK,ПРОЦЕНТЫ НА ОСТАТОК,ВЫПЛАТА ПРОЦЕНТОВ,НАЧИСЛЕНИЕ ПРОЦЕНТОВ", "#C3DA6A", "income", "def:Кэшбэк"),
-  C("Между своими счетами", "ПЕРЕВОД СЕБЕ,ПЕРЕВОД С ДОГОВОРА,ВНУТРЕННИЙ ПЕРЕВОД,МЕЖДУ СВОИМИ СЧЕТАМИ", "#B9B6A6", "transfer"),
+  C("Между своими счетами", "ПЕРЕВОД СЕБЕ,ПЕРЕВОД С ДОГОВОРА,ВНУТРЕННИЙ ПЕРЕВОД,МЕЖДУ СВОИМИ СЧЕТАМИ,ПОГАШЕНИЕ ПРОСРОЧЕННОЙ", "#B9B6A6", "transfer"),
   C("Прочее", "", "#C9C6B8", "both"),
 ];
-export const CATEGORIES_VERSION = 4;
+export const CATEGORIES_VERSION = 6;
 export const KIND_LABELS = { expense: "Расход", income: "Доход", both: "Смотря по операции", debt: "Платёж по долгу", transfer: "Между своими счетами" };
 
 /** Вклад операции в итоги с учётом типа категории: { income, expense, debt } (могут быть < 0 — возвраты). */
@@ -257,6 +261,19 @@ export function itemsToLines(items, yTol = 3) {
   return rows.map((r) => r.items.sort((a, b) => a.x - b.x).map((p) => p.s).join(" "));
 }
 
+export const CREDIT_MARKERS = /проценты по кредиту|защита карты|минимального платежа|просроченной задолженности|погашение кредита/i;
+
+/** Шапка выписки Т-Банка: номер договора и тип счёта.
+ *  Лицевой счёт 408… — обычный (дебетовый) счёт, 47427…/455… — кредитная карта. */
+export function statementInfo(header) {
+  const contract = (header.match(/Номер договора:\s*(\d+)/) || [])[1] || "";
+  const acc = (header.match(/Номер лицевого сч[её]та:\s*(\d+)/) || [])[1] || "";
+  let accountType = "";
+  if (/^40[78]/.test(acc)) accountType = "debit";
+  else if (/^(47427|455)/.test(acc) || /кредитн/i.test(header)) accountType = "credit";
+  return { contract, accountType };
+}
+
 /** pdfjsLib — модуль pdf.js; data — Uint8Array файла. Возвращает записи без хэшей. */
 export async function parsePdf(pdfjsLib, data) {
   let doc;
@@ -266,12 +283,20 @@ export async function parsePdf(pdfjsLib, data) {
     throw new Error("Файл не читается как PDF (повреждён или это другой формат).");
   }
   const records = [];
+  let header = "";
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const tc = await page.getTextContent();
-    records.push(...recordsFromLines(itemsToLines(tc.items)));
+    const lines = itemsToLines(tc.items);
+    if (p === 1) header = lines.slice(0, 30).join("\n");
+    records.push(...recordsFromLines(lines));
   }
   await doc.destroy();
+  // Шапку pdf.js в выписках Т-Банка иногда не видит, поэтому дополнительно узнаём
+  // кредитку по её характерным операциям (проценты по кредиту, «Защита карты»…)
+  const info = statementInfo(header);
+  if (!info.accountType && records.some((r) => CREDIT_MARKERS.test(r.description))) info.accountType = "credit";
+  for (const r of records) Object.assign(r, info);
   if (!records.length)
     throw new Error("В PDF не найдено ни одной операции. Это точно выписка с операциями, а не справка? И текст в ней не картинкой?");
   return records;

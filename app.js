@@ -117,8 +117,11 @@ async function dashboard() {
   // Итоги с учётом типа категории: переводы между своими счетами не считаются,
   // а возвраты и чужие доли (например, за аренду) уменьшают расход своей категории
   const contrib = (o) => contribution(o, catOf(o).kind);
-  let income = 0, expense = 0, debtPay = 0;
-  for (const o of mOps) { const c = contrib(o); income += c.income; expense += c.expense; debtPay += c.debt; }
+  let income = 0, expense = 0, debtPay = 0, returned = 0;
+  for (const o of mOps) {
+    const c = contrib(o); income += c.income; expense += c.expense; debtPay += c.debt;
+    if (c.expense < 0) returned -= c.expense;
+  }
   const net = income - expense - debtPay;
 
   const byCat = (kind) => {
@@ -160,6 +163,7 @@ async function dashboard() {
         <div class="flow out"><span>потрачено</span><b>${money(expense)}</b></div>
         ${Math.abs(debtPay) > 0.5 ? `<div class="flow debt"><span>на долги</span><b>${money(debtPay)}</b></div>` : ""}
       </div>
+      ${returned > 0.5 ? `<p class="hero-note">«Потрачено» — уже за вычетом ${money(returned)}, которые вам вернули: скинулись за общие чеки, доля за аренду, возвраты покупок.</p>` : ""}
     </section>
     <div class="grid-2">
       <div class="card">
@@ -262,7 +266,7 @@ function opItem(o, cat, withSelect, cats = []) {
   return `<li class="${excluded ? "excluded" : ""}" data-hash="${esc(o.hash)}">
     <span class="d" title="${esc(o.description)}">${esc(o.description) || "—"}</span>
     <span class="a" ${excluded ? 'title="Не входит в доходы и расходы"' : ""}>${amount}</span>
-    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${catHtml}${debtSel}${noteBtn}</span>
+    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${o.accountType === "credit" ? `<span class="src-tag">кредитка</span>` : ""}${catHtml}${debtSel}${noteBtn}</span>
     ${o.note ? `<span class="note">${esc(o.note)}</span>` : ""}
   </li>`;
 }
@@ -369,6 +373,16 @@ async function opsPage(params) {
 // ---------------------------------------------------------------------------
 const DEBT_TYPES = { card: "Кредитная карта", loan: "Кредит", person: "Долг человеку" };
 
+function statRow(label, value, color, cats, explain) {
+  const items = cats.filter((c) => Math.abs(c.avg) > 0.5);
+  return `<details class="stat-row">
+    <summary><span class="dt">${color ? `<span class="dot" style="background:${color}"></span>` : ""}${label}</span><span class="dd">${value < 0 ? "−" : ""}${money(Math.abs(value))}</span></summary>
+    <div class="stat-detail"><p>${explain}</p>
+      ${items.length ? `<ul>${items.map((c) => `<li><span>${dot(c.cat)} ${esc(c.cat.name)}</span><span>${c.avg < 0 ? "−" : ""}${money(Math.abs(c.avg))}</span></li>`).join("")}</ul>` : "<p>Пока ничего нет.</p>"}
+    </div>
+  </details>`;
+}
+
 async function planPage() {
   const [ops, cats, debts, cushionSaved, cushionTarget, cushionMonths] = await Promise.all([
     S.operations(), S.categories(), S.debts(),
@@ -388,7 +402,8 @@ async function planPage() {
   const base = Math.max(a.avgIncome, parts.reduce((s, p) => s + p.v, 0)) || 1;
   const bar = parts.filter((p) => p.v > 0.5).map((p) => `<span style="width:${(p.v / base) * 100}%;background:${p.color}" title="${p.label}: ${money(p.v)}"></span>`).join("");
 
-  const nonEss = a.categories.filter((c) => !c.cat.essential && c.cat.kind === "expense").slice(0, 6);
+  const fees = (a.categories.find((c) => c.cat.id === "def:Проценты и комиссии") || { avg: 0 }).avg;
+  const nonEss = a.categories.filter((c) => !c.cat.essential && c.cat.kind === "expense" && c.avg > 0).slice(0, 6);
   const unsorted = a.categories.filter((c) => c.cat.kind === "both").reduce((s, c) => s + c.avg, 0);
   const debtRows = a.debts.map((d) => {
     const pd = a.plan.byDebt[d.id];
@@ -407,13 +422,14 @@ async function planPage() {
     <section class="card">
       <h2>Средний месяц</h2>
       <div class="split-bar">${bar}</div>
-      <dl class="stat-list">
-        <div><dt>приходит</dt><dd>${money(a.avgIncome)}</dd></div>
-        <div><dt><span class="dot" style="background:var(--violet)"></span>обязательные траты</dt><dd>${money(a.avgEssential)}</dd></div>
-        <div><dt><span class="dot" style="background:var(--lilac)"></span>остальные траты</dt><dd>${money(a.avgOther)}</dd></div>
-        ${Math.abs(a.avgDebt) > 0.5 ? `<div><dt><span class="dot" style="background:#7B4A86"></span>платежи по долгам</dt><dd>${money(a.avgDebt)}</dd></div>` : ""}
-        <div class="free"><dt><span class="dot" style="background:var(--salad)"></span>остаётся свободным</dt><dd>${a.avgFree < 0 ? "−" : ""}${money(Math.abs(a.avgFree))}</dd></div>
-      </dl>
+      <p class="hint" style="margin-top:0">Нажмите на строку, чтобы увидеть, из каких категорий она складывается.</p>
+      <div class="stat-list">
+        ${statRow("приходит", a.avgIncome, "", a.incomeCats, "Все доходы: зарплата, деньги от близких, кэшбэк. То, что вам скинули за общие чеки, сюда не входит — эти деньги уменьшают траты.")}
+        ${statRow("обязательные траты", a.avgEssential, "var(--violet)", a.categories.filter((c) => c.cat.essential), "Категории с отметкой «обязательная» (Лимиты → Ключевые слова). На них считается подушка безопасности.")}
+        ${statRow("остальные траты", a.avgOther, "var(--lilac)", a.categories.filter((c) => !c.cat.essential), "Все остальные траты. Деньги, которые вам скинули за общие чеки, здесь вычитаются.")}
+        ${Math.abs(a.avgDebt) > 0.5 ? statRow("платежи по долгам", a.avgDebt, "#7B4A86", a.debtCats, "Операции в категории «Погашение долгов»: платежи по кредитке (если её выписку вы не загружаете) и возвраты долгов людям.") : ""}
+        <div class="stat-row free"><span class="dt"><span class="dot" style="background:var(--salad)"></span>остаётся свободным</span><span class="dd">${a.avgFree < 0 ? "−" : ""}${money(Math.abs(a.avgFree))}</span></div>
+      </div>
       ${nonEss.length ? `<h3>Где можно сэкономить</h3>
         <p class="hint" style="margin-top:0">Необязательные траты, от больших к меньшим. Стрелка — последний полный месяц по сравнению со средним.</p>
         <ul class="op-list">${nonEss.map((c) => `<li><span class="d">${dot(c.cat)} ${esc(c.cat.name)}</span><span class="a">${money(c.avg)}</span>
@@ -440,6 +456,7 @@ async function planPage() {
 
     <section class="card">
       <div class="card-head"><h2>Долги</h2><button type="button" id="debt-add" class="secondary">Добавить долг</button></div>
+      ${fees > 0.5 ? `<p class="msg show info note">Кредитка обходится вам в среднем в <b>${money(fees)}</b> в месяц: проценты, штрафы и плата за «Защиту карты». Это деньги, которые не тратятся ни на что, — их стоит убрать в первую очередь.</p>` : ""}
       ${a.debts.length ? `<ul class="debt-list">${debtRows}</ul>
         <p class="big-line">${a.debtBudget > 0.5 || a.plan.minTotal > 0
           ? `Без напряжения можно направлять в долги <b>${money(a.plan.budget)}</b> в месяц${a.plan.months ? `, тогда всё закроется ${monthsFrom(a.plan.months)}` : ""}.`
@@ -712,7 +729,7 @@ async function importFiles(files) {
     try {
       const r = await importFile(f);
       if (r.backup) lines.push(`${f.name}: копия загружена — обновлено операций ${r.backup.operations}, категорий ${r.backup.categories}`);
-      else lines.push(`${f.name}: найдено ${r.parsed}, добавлено ${r.added}${r.duplicates ? `, уже были ${r.duplicates}` : ""}`);
+      else lines.push(`${f.name}${r.accountType === "credit" ? " (кредитная карта)" : r.accountType === "debit" ? " (дебетовая карта)" : ""}: найдено ${r.parsed}, добавлено ${r.added}${r.duplicates ? `, уже были ${r.duplicates}` : ""}`);
     } catch (e) { ok = false; lines.push(`Не получилось: ${f.name}: ${e.message}`); }
   }
   return { ok, text: lines.join("\n") };
@@ -837,7 +854,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v9";
+const APP_VERSION = "v11";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;

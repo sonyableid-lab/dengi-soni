@@ -5,8 +5,8 @@
 // свежая правка. Удаление — это пометка deleted, а не стирание, чтобы оно тоже
 // «доехало» до другой копии. Эти же поля пригодятся для облачной синхронизации.
 import {
-  DEFAULT_CATEGORIES, OTHER, buildKeywordIndex, classify, assignHashes,
-  descriptionCore, descriptionTokens,
+  DEFAULT_CATEGORIES, CATEGORIES_VERSION, OTHER, buildKeywordIndex, classify, assignHashes,
+  descriptionCore, descriptionTokens, isGenericTransfer,
 } from "./engine.js";
 
 const DB_NAME = "dengi-soni";
@@ -71,17 +71,52 @@ export async function init() {
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch {}
   const cats = await getAll("categories");
   if (!cats.length) {
-    await putMany("categories", DEFAULT_CATEGORIES.map(([name, keywords, color], i) => ({
-      id: defaultCategoryId(name), name, keywords, color, order: i, updatedAt: 0,
-    })));
+    await putMany("categories", DEFAULT_CATEGORIES.map((d, i) => ({ ...d, order: i, updatedAt: 0 })));
+    await setMeta("catVersion", CATEGORIES_VERSION);
+    return;
   }
+  const ver = (await getMeta("catVersion")) || 1;
+  if (ver < CATEGORIES_VERSION) await migrateCategories(cats);
+}
+
+const splitWords = (s) => (s || "").split(",").map((w) => w.trim()).filter(Boolean);
+
+/** Обновить стартовые категории до новой версии, не трогая ваши правки. */
+async function migrateCategories(cats) {
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  const aliveNames = new Set(cats.filter(alive).map((c) => c.name.toLowerCase()));
+  const out = [];
+  DEFAULT_CATEGORIES.forEach((d, i) => {
+    const c = byId.get(d.id);
+    if (!c) {
+      if (!aliveNames.has(d.name.toLowerCase())) out.push({ ...d, order: i, updatedAt: 0 });
+      return;
+    }
+    if (!c.updatedAt) {
+      // Вы её не меняли — просто заменить новой версией
+      out.push({ ...c, name: d.name, keywords: d.keywords, color: d.color, kind: d.kind, order: i });
+    } else {
+      // Вы её меняли — сохранить ваши слова, убрать те, что теперь у других категорий, добавить новые
+      const others = new Set(DEFAULT_CATEGORIES.filter((x) => x.id !== d.id).flatMap((x) => splitWords(x.keywords).map((w) => w.toUpperCase())));
+      const mine = splitWords(c.keywords).filter((w) => !others.has(w.toUpperCase()));
+      const have = new Set(mine.map((w) => w.toUpperCase()));
+      for (const w of splitWords(d.keywords)) if (!have.has(w.toUpperCase())) mine.push(w);
+      out.push({ ...c, keywords: mine.join(","), kind: c.kind || d.kind, order: i, updatedAt: now() });
+    }
+  });
+  for (const c of cats) if (!c.id.startsWith("def:") && !c.kind) out.push({ ...c, kind: "expense" });
+  await putMany("categories", out);
+  await setMeta("catVersion", CATEGORIES_VERSION);
+  await reclassifyAll();
 }
 
 // ---------------------------------------------------------------------------
 // Чтение
 // ---------------------------------------------------------------------------
+const DEFAULT_KIND = new Map(DEFAULT_CATEGORIES.map((d) => [d.id, d.kind]));
 export async function categories() {
-  return (await getAll("categories")).filter(alive).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ru"));
+  return (await getAll("categories")).filter(alive)
+    .map((c) => (c.kind ? c : { ...c, kind: DEFAULT_KIND.get(c.id) || "expense" })).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ru"));
 }
 export async function operations() {
   return (await getAll("operations")).filter(alive);
@@ -134,6 +169,7 @@ export async function setOperationCategory(hash, categoryId) {
   const other = await otherId();
 
   if (op.kind === "income") result.skipped = "income";
+  else if (isGenericTransfer(op.description)) result.skipped = "transfer";
   else if (categoryId === other) result.skipped = "other";
   else {
     const keyword = descriptionCore(op.description);
@@ -193,6 +229,12 @@ export async function reclassifyAll() {
   return changes.length;
 }
 
+export async function setOperationNote(hash, note) {
+  const op = (await getAll("operations")).find((o) => o.hash === hash);
+  if (!op) throw new Error("Операция не найдена.");
+  await putMany("operations", [{ ...op, note: (note || "").trim(), updatedAt: now() }]);
+}
+
 export async function deleteOperation(hash) {
   const op = (await getAll("operations")).find((o) => o.hash === hash);
   if (op) await putMany("operations", [{ ...op, deleted: true, updatedAt: now() }]);
@@ -203,7 +245,7 @@ export async function deleteOperation(hash) {
 // ---------------------------------------------------------------------------
 const PALETTE = ["#7C9A3A", "#9B7BC9", "#C7739A", "#3E8A7C", "#C9973B", "#5B79AE", "#A27E5A", "#6C9E6A", "#8A63B8", "#D3A2B9"];
 
-export async function createCategory(name, keywords = "") {
+export async function createCategory(name, keywords = "", kind = "expense") {
   name = name.trim();
   if (!name) throw new Error("Введите название категории.");
   const cats = await categories();
@@ -212,7 +254,7 @@ export async function createCategory(name, keywords = "") {
   const otherOrder = (cats.find((c) => c.name === OTHER) || { order: 999 }).order;
   const cat = {
     id, name, keywords: keywords.split(",").map((w) => w.trim().toUpperCase()).filter(Boolean).join(","),
-    color: PALETTE[cats.length % PALETTE.length], order: otherOrder - 0.5, updatedAt: now(),
+    color: PALETTE[cats.length % PALETTE.length], kind, order: otherOrder - 0.5, updatedAt: now(),
   };
   await putMany("categories", [cat]);
   return cat;

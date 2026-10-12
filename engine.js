@@ -3,27 +3,61 @@
 // Перенесено с Python (app/pdf_parser.py, app/parser.py, app/classifier.py).
 
 // ---------------------------------------------------------------------------
-// Стартовые категории: [название, ключевые слова, цвет, тип]
-// тип: 'expense' | 'income' | 'any' — только для подсказок интерфейса
+// Стартовые категории.
+// kind — как категория участвует в итогах:
+//   expense  — расходы; входящий перевод в неё (возврат, чья-то доля) УМЕНЬШАЕТ расход
+//   income   — доходы; списание в ней уменьшает доход
+//   both     — операция считается по своему направлению (переводы людям, прочее)
+//   transfer — между своими счетами: не доход и не расход, в итоги не входит
+// id у стартовых категорий постоянный ("def:…"), даже если название поменялось.
 // ---------------------------------------------------------------------------
+const C = (name, keywords, color, kind = "expense", id = "def:" + name) => ({ id, name, keywords, color, kind });
 export const DEFAULT_CATEGORIES = [
-  ["Продукты", "МАГНИТ,MAGNIT,ПЯТЁРОЧКА,ПЯТЕРОЧКА,PYATEROCHKA,ПЕРЕКРЁСТОК,ПЕРЕКРЕСТОК,PEREKRESTOK,ЛЕНТА,LENTA,АШАН,AUCHAN,ВКУСВИЛЛ,VKUSVILL,VV_,ДИКСИ,СПАР,SPAR,МЕТРО,АЗБУКА ВКУСА,ПРОДУКТЫ,ATAK,САМБЕРУ,SAMOKAT", "#8DB255"],
-  ["Кафе и рестораны", "РЕСТОРАН,КАФЕ,КОФЕЙНЯ,КОФЕ,ПИЦЦА,СУШИ,РОЛЛЫ,СТОЛОВАЯ,БУРГЕР,MCDONALDS,DODO,KFC,ВКУСНО И ТОЧКА,ШОКОЛАДНИЦА,ЯНДЕКС.ЕДА,YANDEX EDA,DELIVERY,СБЕРМАРКЕТ,MEALTY,DONER,ДОНЕР,SHAURMA,ШАУРМА,EATANDSPLIT", "#D98BAE"],
-  ["Транспорт", "ТАКСИ,YANDEX GO,ЯНДЕКС GO,YANDEX*GO,YANDEX.TAXI,ЯНДЕКС.ТАКСИ,UBER,ТРОЙКА,ЦППК,CPPK,РЖД,RUSSIAN RAILWAYS,АЭРОФЛОТ,AEROFLOT,ПОБЕДА,АЗС,БЕНЗИН,ГАЗПРОМНЕФТЬ,ЛУКОЙЛ,LUKOIL,СИТИДРАЙВ,ВЕЛОБАЙК,ПАРКОВКА,YANDEX.SCOOTER,GO SCOOTER,MOSKVA METRO,MOS.TRANSPORT,NOVOPODREZKOVO,MOSSELMASH,LIANOZOVO,PAVELETSKAYA", "#6A4E9E"],
-  ["Здоровье", "АПТЕКА,APTEKA,ГОРЗДРАВ,ЗДОРОВ.РУ,РИГЛА,RIGLA,36.6,ИНВИТРО,ГЕМОТЕСТ,КЛИНИКА,ПОЛИКЛИНИКА,СТОМАТОЛОГИЯ,МЕДСИ", "#4E9C8F"],
-  ["Развлечения", "КИНО,ОККО,KION,ИВИ,NETFLIX,STEAM,PLAYSTATION,XBOX,КИНОПОИСК,ТЕАТР,КОНЦЕРТ,МУЗЫКА,ЯНДЕКС.ПЛЮС,YANDEX PLUS,CINEMASTAR,СЕРВИСЫ ЯНДЕКСА", "#A98BD6"],
-  ["Дом и быт", "IKEA,ЛЕРУА МЕРЛЕН,ХОФФ,М.ВИДЕО,МВИДЕО,MVIDEO,ЭЛЬДОРАДО,DNS,СИТИЛИНК,ЖКХ,ЕИРЦ,МОСЭНЕРГО,ЭНЕРГОСБЫТ,РЕМОНТ,МЕБЕЛЬ,FIXPRICE,FIX PRICE", "#B39368"],
-  ["Одежда и покупки", "WILDBERRIES,ОЗОН,OZON,ЛАМОДА,LAMODA,ZARA,H&M,UNIQLO,GLORIA JEANS,АЛИЭКСПРЕСС,ALIEXPRESS,СПОРТМАСТЕР,МАГНИТ КОСМЕТИК,ЗОЛОТОЕ ЯБЛОКО,FAMILIA,FLOWWOW", "#E2B64E"],
-  ["Связь и интернет", "МТС,БИЛАЙН,BEELINE,МЕГАФОН,ТЕЛЕ2,ЙОТА,YOTA,РОСТЕЛЕКОМ,МГТС,MGTS,ПОЧТА РОССИИ", "#5E7FB8"],
-  ["Образование", "SKYENG,КУРСЫ,ШКОЛА,УНИВЕРСИТЕТ,ПРАКТИКУМ,STEPIK,STEPIC,УЧЕБНИК", "#3F6E4E"],
-  ["Путешествия", "OSTROVOK,ОТЕЛЬ,HOTEL,BOOKING,АВИАБИЛЕТ,TINKOFF TRAVEL", "#6FB3C4"],
-  ["Питомцы", "ZOOMAGAZIN,ЗООМАГАЗИН,ЧЕТЫРЕ ЛАПЫ,4 LAPY", "#B8CF5A"],
-  ["Наличные", "СНЯТИЕ НАЛИЧНЫХ", "#A6A396"],
-  ["Переводы", "ПЕРЕВОД,СБП", "#8C8FA8"],
-  ["Пополнение", "ПОПОЛНЕНИЕ,ЗАЧИСЛЕНИЕ,ВНЕСЕНИЕ НАЛИЧНЫХ", "#2F6B45"],
-  ["Кэшбэк", "КЭШБЭК,CASHBACK", "#C3DA6A"],
-  ["Прочее", "", "#C9C6B8"],
+  C("Продукты", "МАГНИТ,MAGNIT,ПЯТЁРОЧКА,ПЯТЕРОЧКА,PYATEROCHKA,ПЕРЕКРЁСТОК,ПЕРЕКРЕСТОК,PEREKRESTOK,ЛЕНТА,LENTA,АШАН,AUCHAN,ВКУСВИЛЛ,VKUSVILL,VV_,ДИКСИ,СПАР,SPAR,МЕТРО,АЗБУКА ВКУСА,ПРОДУКТЫ,ATAK,САМБЕРУ,SAMOKAT", "#8DB255"),
+  C("Кафе и рестораны", "РЕСТОРАН,КАФЕ,КОФЕЙНЯ,КОФЕ,ПИЦЦА,СУШИ,РОЛЛЫ,СТОЛОВАЯ,БУРГЕР,MCDONALDS,DODO,KFC,ВКУСНО И ТОЧКА,ШОКОЛАДНИЦА,ЯНДЕКС.ЕДА,YANDEX EDA,DELIVERY,СБЕРМАРКЕТ,MEALTY,DONER,ДОНЕР,SHAURMA,ШАУРМА,EATANDSPLIT,WU SHU", "#D98BAE"),
+  C("Транспорт", "ТАКСИ,YANDEX GO,ЯНДЕКС GO,YANDEX*GO,YANDEX.TAXI,ЯНДЕКС.ТАКСИ,UBER,ТРОЙКА,ЦППК,CPPK,РЖД,RUSSIAN RAILWAYS,АЭРОФЛОТ,AEROFLOT,ПОБЕДА,АЗС,БЕНЗИН,ГАЗПРОМНЕФТЬ,ЛУКОЙЛ,LUKOIL,СИТИДРАЙВ,ВЕЛОБАЙК,ПАРКОВКА,YANDEX.SCOOTER,GO SCOOTER,MOSKVA METRO,MOS.TRANSPORT,NOVOPODREZKOVO,MOSSELMASH,LIANOZOVO,PAVELETSKAYA", "#6A4E9E"),
+  C("Аренда и ЖКХ", "АРЕНДА,КВАРТПЛАТА,ЖКХ,ЕИРЦ,МОСЭНЕРГО,ЭНЕРГОСБЫТ,МОСГАЗ,МОСВОДОКАНАЛ", "#4A3772"),
+  C("Дом и быт", "IKEA,ЛЕРУА МЕРЛЕН,ХОФФ,М.ВИДЕО,МВИДЕО,MVIDEO,ЭЛЬДОРАДО,DNS,СИТИЛИНК,РЕМОНТ,МЕБЕЛЬ,FIXPRICE,FIX PRICE", "#B39368"),
+  C("Одежда и покупки", "WILDBERRIES,ОЗОН,OZON,ЛАМОДА,LAMODA,ZARA,H&M,UNIQLO,GLORIA JEANS,АЛИЭКСПРЕСС,ALIEXPRESS,FAMILIA", "#E2B64E"),
+  C("Красота и уход", "ЗОЛОТОЕ ЯБЛОКО,GOLDAPPLE,ЛЭТУАЛЬ,LETOILE,РИВ ГОШ,RIVE GAUCHE,ПОДРУЖКА,МАГНИТ КОСМЕТИК,MAGNIT KOSMETIK,УЛЫБКА РАДУГИ,САЛОН КРАСОТЫ,BARBER", "#E7A6C4"),
+  C("Здоровье", "АПТЕКА,APTEKA,ГОРЗДРАВ,ЗДОРОВ.РУ,РИГЛА,RIGLA,36.6,ИНВИТРО,ГЕМОТЕСТ,КЛИНИКА,ПОЛИКЛИНИКА,СТОМАТОЛОГИЯ,МЕДСИ", "#4E9C8F"),
+  C("Спорт", "СПОРТМАСТЕР,ФИТНЕС,FITNESS,WORLD CLASS,DDX,ЙОГА,YOGA,БАССЕЙН", "#5FA88A"),
+  C("Развлечения", "КИНО,ТЕАТР,КОНЦЕРТ,МУЗЕЙ,STEAM,PLAYSTATION,XBOX,CINEMASTAR,КАРО,FORMULA KINO", "#A98BD6"),
+  C("Подписки", "СЕРВИСЫ ЯНДЕКСА,ЯНДЕКС.ПЛЮС,YANDEX PLUS,КИНОПОИСК,ОККО,KION,ИВИ,NETFLIX,SPOTIFY,APPLE.COM,ITUNES", "#8F7BC0"),
+  C("Связь и интернет", "МТС,БИЛАЙН,BEELINE,МЕГАФОН,ТЕЛЕ2,ЙОТА,YOTA,РОСТЕЛЕКОМ,МГТС,MGTS,ПОЧТА РОССИИ", "#5E7FB8"),
+  C("Образование", "SKYENG,КУРСЫ,ШКОЛА,УНИВЕРСИТЕТ,ПРАКТИКУМ,STEPIK,STEPIC,УЧЕБНИК", "#3F6E4E"),
+  C("Подарки", "FLOWWOW,ЦВЕТЫ,FLOWERS", "#D4789B"),
+  C("Путешествия", "OSTROVOK,ОТЕЛЬ,HOTEL,BOOKING,АВИАБИЛЕТ,TINKOFF TRAVEL", "#6FB3C4"),
+  C("Питомцы", "ZOOMAGAZIN,ЗООМАГАЗИН,ЧЕТЫРЕ ЛАПЫ,4 LAPY", "#B8CF5A"),
+  C("Наличные", "СНЯТИЕ НАЛИЧНЫХ", "#A6A396"),
+  C("Переводы людям", "ВНЕШНИЙ ПЕРЕВОД,ПЕРЕВОД ПО НОМЕРУ,ПЕРЕВОД,СБП,ВНЕСЕНИЕ НАЛИЧНЫХ", "#8C8FA8", "both", "def:Переводы"),
+  C("Зарплата", "БАНКА ВТБ,ЗАЧИСЛЕНИЕ ЗАРПЛАТЫ,ЗАРПЛАТА,АВАНС", "#2F6B45", "income"),
+  C("Подработка", "", "#6B9C3A", "income"),
+  C("Пополнение", "ПОПОЛНЕНИЕ,ЗАЧИСЛЕНИЕ", "#9DBF6A", "income"),
+  C("Кэшбэк", "КЭШБЭК,CASHBACK", "#C3DA6A", "income"),
+  C("Между своими счетами", "ПЕРЕВОД СЕБЕ,ПЕРЕВОД С ДОГОВОРА,ВНУТРЕННИЙ ПЕРЕВОД,МЕЖДУ СВОИМИ СЧЕТАМИ", "#B9B6A6", "transfer"),
+  C("Прочее", "", "#C9C6B8", "both"),
 ];
+export const CATEGORIES_VERSION = 3;
+export const KIND_LABELS = { expense: "Расход", income: "Доход", both: "Смотря по операции", transfer: "Между своими счетами" };
+
+/** Вклад операции в итоги с учётом типа категории: { income, expense } (могут быть < 0 — возвраты). */
+export function contribution(op, kind = "both") {
+  const a = op.amount;
+  const inc = op.kind === "income";
+  switch (kind) {
+    case "transfer": return { income: 0, expense: 0 };
+    case "expense": return { income: 0, expense: inc ? -a : a };
+    case "income": return { income: inc ? a : -a, expense: 0 };
+    default: return inc ? { income: a, expense: 0 } : { income: 0, expense: a };
+  }
+}
+
+/** Описание перевода: одинаково для разных людей и целей, поэтому правило по нему не запоминаем. */
+export function isGenericTransfer(desc) {
+  return /(перевод|пополнение|внесение|снятие|система быстрых платежей|сбп)/i.test(desc || "");
+}
+
 export const OTHER = "Прочее";
 
 // ---------------------------------------------------------------------------

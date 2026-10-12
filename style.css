@@ -188,7 +188,7 @@ button:disabled { opacity: .55; cursor: default; }
 .op-list li:last-child { border-bottom: none; }
 .op-list .d { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-list .sub { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; min-width: 0; }
-.op-list .sub select { padding: 4px 30px 4px 12px; font-size: 13px; max-width: 190px; background-position: right 11px center; background-color: var(--paper); border-color: transparent; }
+.op-list .sub select { padding: 4px 30px 4px 12px; font-size: 13px; max-width: 230px; background-position: right 11px center; background-color: var(--paper); border-color: transparent; }
 .op-list .a { grid-row: 1 / span 2; grid-column: 2; text-align: right; white-space: nowrap; font-family: var(--serif); font-size: 22px; font-weight: 600; }
 .op-list li.day-head {
   display: block; border: none; padding: 20px 0 2px;
@@ -296,3 +296,12 @@ body.dropping::after {
   font-family: var(--serif); font-size: 36px; color: var(--forest);
   background: rgba(220, 208, 239, .88); border: 2px dashed var(--violet); border-radius: var(--r-lg);
 }
+
+/* Заметки и операции между своими счетами */
+.op-list .note { grid-column: 1 / -1; font-family: var(--serif); font-style: italic; font-size: 17px; color: var(--violet); line-height: 1.2; }
+.op-list .note-input { grid-column: 1 / -1; border-radius: var(--r-sm); padding: 7px 12px; font-size: 14px; }
+.note-btn { background: none; color: var(--muted); padding: 2px 4px; font-size: 12.5px; font-weight: 400; }
+.note-btn:hover { background: none; color: var(--violet); }
+.op-list li.excluded .a { color: var(--muted); opacity: .75; }
+.op-list li.excluded .a span { color: inherit; }
+.kind-tag { color: var(--muted); font-size: 12.5px; font-family: var(--sans); font-weight: 400; }

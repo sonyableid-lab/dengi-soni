@@ -1,6 +1,6 @@
 // app.js — интерфейс «Денег Сони»: страницы, графики, загрузка выписок.
 import * as S from "./store.js";
-import { parsePdf, parseCsv, decodeText, OTHER } from "./engine.js";
+import { parsePdf, parseCsv, decodeText, OTHER, contribution, KIND_LABELS } from "./engine.js";
 
 // ---------------------------------------------------------------------------
 // Утилиты
@@ -113,25 +113,30 @@ async function dashboard() {
   const other = cats.find((c) => c.name === OTHER);
   const catOf = (o) => catById.get(o.categoryId) || other;
   const mOps = ops.filter((o) => o.date.startsWith(currentMonth));
-  const income = mOps.filter((o) => o.kind === "income").reduce((s, o) => s + o.amount, 0);
-  const expense = mOps.filter((o) => o.kind === "expense").reduce((s, o) => s + o.amount, 0);
+  // Итоги с учётом типа категории: переводы между своими счетами не считаются,
+  // а возвраты и чужие доли (например, за аренду) уменьшают расход своей категории
+  const contrib = (o) => contribution(o, catOf(o).kind);
+  let income = 0, expense = 0;
+  for (const o of mOps) { const c = contrib(o); income += c.income; expense += c.expense; }
   const net = income - expense;
 
   const byCat = (kind) => {
     const m = new Map();
-    for (const o of mOps.filter((o) => o.kind === kind)) {
+    for (const o of mOps) {
+      const v = contrib(o)[kind];
+      if (!v) continue;
       const c = catOf(o);
       const x = m.get(c.id) || { id: c.id, name: c.name, color: c.color, total: 0 };
-      x.total += o.amount;
+      x.total += v;
       m.set(c.id, x);
     }
-    return [...m.values()].sort((a, b) => b.total - a.total);
+    return [...m.values()].filter((x) => x.total > 0.5).sort((a, b) => b.total - a.total);
   };
   const [y, mm] = currentMonth.split("-").map(Number);
   const days = new Date(y, mm, 0).getDate();
   const daily = Array.from({ length: days }, (_, i) => {
     const iso = `${currentMonth}-${String(i + 1).padStart(2, "0")}`;
-    return mOps.filter((o) => o.kind === "expense" && o.date === iso).reduce((s, o) => s + o.amount, 0);
+    return mOps.filter((o) => o.date === iso).reduce((s, o) => s + Math.max(0, contrib(o).expense), 0);
   });
   const last = [...ops].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt).slice(0, 10);
 
@@ -238,16 +243,19 @@ async function backupReminder() {
 }
 
 function opItem(o, cat, withSelect, cats = []) {
+  const excluded = cat.kind === "transfer";
   const amount = o.kind === "expense"
     ? `<span class="amount-expense">−${money2(o.amount)}</span>`
     : `<span class="amount-income">+${money2(o.amount)}</span>`;
   const catHtml = withSelect
-    ? `<select class="cat-select" data-hash="${esc(o.hash)}">${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === cat.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`
+    ? `<select class="cat-select" data-hash="${esc(o.hash)}" aria-label="Категория">${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === cat.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`
     : badge(cat);
-  return `<li>
+  const noteBtn = withSelect ? `<button type="button" class="note-btn" data-hash="${esc(o.hash)}">${o.note ? "изменить заметку" : "+ заметка"}</button>` : "";
+  return `<li class="${excluded ? "excluded" : ""}" data-hash="${esc(o.hash)}">
     <span class="d" title="${esc(o.description)}">${esc(o.description) || "—"}</span>
-    <span class="a">${amount}</span>
-    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${catHtml}</span>
+    <span class="a" ${excluded ? 'title="Не входит в доходы и расходы"' : ""}>${amount}</span>
+    <span class="sub">${withSelect ? "" : `<span>${dayLabel(o.date)}</span>`}${catHtml}${noteBtn}</span>
+    ${o.note ? `<span class="note">${esc(o.note)}</span>` : ""}
   </li>`;
 }
 
@@ -265,10 +273,10 @@ async function opsPage(params) {
   const catOf = (o) => catById.get(o.categoryId) || other;
   let list = ops.filter((o) => !currentMonth || o.date.startsWith(currentMonth));
   if (catFilter) list = list.filter((o) => catOf(o).id === catFilter);
-  if (query) list = list.filter((o) => o.description.toLowerCase().includes(query.toLowerCase()));
+  if (query) list = list.filter((o) => (o.description + " " + (o.note || "")).toLowerCase().includes(query.toLowerCase()));
   list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
   const fc = catById.get(catFilter);
-  const total = list.reduce((s, o) => s + (o.kind === "expense" ? -o.amount : o.amount), 0);
+  const total = list.reduce((s, o) => { const c = contribution(o, catOf(o).kind); return s + c.income - c.expense; }, 0);
 
   let html = "", lastDay = "";
   for (const o of list) {
@@ -282,14 +290,15 @@ async function opsPage(params) {
       <div class="row">
         ${mSel}
         <select id="cat-filter"><option value="">Все категории</option>${cats.map((c) => `<option value="${esc(c.id)}" ${c.id === catFilter ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
-        <input type="text" id="q" placeholder="Поиск по описанию" value="${esc(query)}" style="min-width:160px">
+        <input type="text" id="q" placeholder="Поиск по описанию и заметкам" value="${esc(query)}" style="min-width:160px">
       </div>
     </div>
     <div class="card">
-      ${list.length ? `<p class="summary-line">${list.length} ${plural(list.length, "операция", "операции", "операций")}, итог <b>${total >= 0 ? "+" : "−"}${money(Math.abs(total))}</b></p>
+      ${list.length ? `<p class="summary-line">${list.length} ${plural(list.length, "операция", "операции", "операций")}${list.every((o) => catOf(o).kind === "transfer") ? ", в доходы и расходы не входят" : `, итог <b>${total >= 0 ? "+" : "−"}${money(Math.abs(total))}</b>`}</p>
         <ul class="op-list">${html}</ul>` : `<div class="empty-note">${query || catFilter ? "Ничего не нашлось — попробуйте другой месяц или сбросьте фильтр." : "В этом месяце операций нет."}</div>`}
       <p class="hint">Чтобы поменять категорию, выберите её в списке у операции. Приложение запомнит
-        правило: похожие операции (с тем же словом в описании) получат ту же категорию.</p>
+        правило: похожие операции (с тем же словом в описании) получат ту же категорию. У переводов категория
+        меняется только у выбранной операции — описания у них одинаковые.</p>
     </div>`;
 
   bindMonthSelect(() => opsPage(params));
@@ -316,11 +325,29 @@ async function opsPage(params) {
     if (res.keyword) {
       text = `Запомнила: «${res.keyword}» → ${catById.get(sel.value).name}`;
       if (res.moved) text += `. Похожих операций перенесено: ${res.moved}`;
-    } else if (res.skipped === "income") text = "Категория изменена. Для доходов правило не запоминается.";
+    } else if (res.skipped === "transfer") text = `Категория изменена: ${catById.get(sel.value).name}. Правило для переводов не запоминается — у них одинаковые описания.`;
+    else if (res.skipped === "income") text = "Категория изменена. Для доходов правило не запоминается.";
     else if (res.skipped === "other") text = "Перенесено в «Прочее».";
     else text = "Категория изменена.";
     toast(text, async () => { await S.undoChange(res.undo); render(); });
     if (res.moved) render();
+  }));
+  $$(".note-btn").forEach((btn) => btn.addEventListener("click", () => {
+    const li = btn.closest("li");
+    const op = list.find((o) => o.hash === btn.dataset.hash);
+    li.querySelector(".note")?.remove();
+    const input = document.createElement("input");
+    input.type = "text"; input.className = "note-input"; input.value = op.note || "";
+    input.placeholder = "Например: аренда за октябрь, моя доля";
+    li.appendChild(input); btn.remove(); input.focus();
+    let saved = false;
+    const save = async () => {
+      if (saved) return; saved = true;
+      await S.setOperationNote(op.hash, input.value);
+      opsPage(parseHash().params);
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); if (e.key === "Escape") { saved = true; opsPage(parseHash().params); } });
+    input.addEventListener("blur", save);
   }));
 }
 
@@ -334,7 +361,7 @@ async function limitsPage() {
   const catById = new Map(cats.map((c) => [c.id, c]));
   const rows = lims.filter((l) => catById.has(l.categoryId)).map((l) => {
     const c = catById.get(l.categoryId);
-    const spent = ops.filter((o) => o.kind === "expense" && o.categoryId === c.id && currentMonth && o.date.startsWith(currentMonth)).reduce((s, o) => s + o.amount, 0);
+    const spent = Math.max(0, ops.filter((o) => o.categoryId === c.id && currentMonth && o.date.startsWith(currentMonth)).reduce((s, o) => s + contribution(o, c.kind).expense, 0));
     const pct = (spent / l.cap) * 100;
     return { c, cap: l.cap, spent, pct, state: pct > 100 ? "over" : pct >= 80 ? "warn" : "ok" };
   }).sort((a, b) => b.pct - a.pct);
@@ -356,7 +383,7 @@ async function limitsPage() {
         </div>`).join("") : `<div class="no-limits">Лимитов пока нет. Выберите категорию и сумму ниже.</div>`}
       <p class="hint">Чтобы изменить лимит, поправьте сумму в поле. Ноль убирает лимит. Полоска желтеет после 80% и краснеет при перерасходе.</p>
       <div class="row" style="margin-top:10px">
-        <select id="nl-cat" style="min-width:170px">${cats.filter((c) => c.name !== OTHER).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>
+        <select id="nl-cat" style="min-width:170px">${cats.filter((c) => c.name !== OTHER && (c.kind === "expense" || c.kind === "both")).map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>
         <input type="number" inputmode="numeric" id="nl-cap" min="0" step="100" placeholder="₽ в месяц" style="width:130px">
         <button id="nl-btn">Добавить лимит</button>
       </div>
@@ -367,6 +394,7 @@ async function limitsPage() {
       <div class="row">
         <input type="text" id="nc-name" placeholder="Название, напр. Хобби" style="min-width:170px">
         <input type="text" id="nc-kw" placeholder="Ключевые слова через запятую" style="flex:1;min-width:200px">
+        <select id="nc-kind" aria-label="Тип категории">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === ("expense") ? "selected" : ""}>${l}</option>`).join("")}</select>
         <button id="nc-btn">Добавить категорию</button>
       </div>
       <div class="cat-chips">
@@ -380,7 +408,9 @@ async function limitsPage() {
       <h2>Ключевые слова</h2>
       <p class="hint" style="margin-top:0">Если слово встречается в описании операции, она получает эту категорию
         (регистр не важен, через запятую). Операции, у которых вы меняли категорию вручную, пересчёт не трогает.</p>
-      ${cats.filter((c) => c.name !== OTHER).map((c) => `<div class="kw-row"><span class="limit-name" style="font-size:21px">${dot(c)}${esc(c.name)}</span><textarea rows="2" data-cat="${esc(c.id)}" aria-label="Ключевые слова: ${esc(c.name)}">${esc(c.keywords)}</textarea></div>`).join("")}
+      <p class="hint">Тип категории решает, как она входит в итоги. «Расход»: входящие деньги в ней уменьшают расход
+        (возврат покупки, чья-то доля за общую аренду). «Доход» — наоборот. «Между своими счетами» не входит ни в доходы, ни в расходы.</p>
+      ${cats.filter((c) => c.name !== OTHER).map((c) => `<div class="kw-row"><div class="limit-head"><span class="limit-name" style="font-size:21px">${dot(c)}${esc(c.name)}</span><select class="kind-select" data-cat="${esc(c.id)}" aria-label="Тип категории ${esc(c.name)}">${Object.entries(KIND_LABELS).map(([k, l]) => `<option value="${k}" ${k === (c.kind) ? "selected" : ""}>${l}</option>`).join("")}</select></div><textarea rows="2" data-cat="${esc(c.id)}" aria-label="Ключевые слова: ${esc(c.name)}">${esc(c.keywords)}</textarea></div>`).join("")}
       <div class="row" style="margin-top:12px"><button id="kw-btn">Сохранить и пересчитать</button></div>
       <div id="kw-msg" class="msg"></div>
     </div>`;
@@ -399,7 +429,7 @@ async function limitsPage() {
   });
   $("#nc-btn").addEventListener("click", async () => {
     try {
-      const c = await S.createCategory($("#nc-name").value, $("#nc-kw").value);
+      const c = await S.createCategory($("#nc-name").value, $("#nc-kw").value, $("#nc-kind").value);
       if (c.keywords) await S.reclassifyAll();
       limitsPage().then(() => showMsg($("#cat-msg"), "ok", `Категория «${c.name}» добавлена.`));
     } catch (e) { showMsg($("#cat-msg"), "err", e.message); }
@@ -414,6 +444,9 @@ async function limitsPage() {
     for (const ta of $$("textarea[data-cat]")) {
       const kw = ta.value.split(",").map((w) => w.trim().toUpperCase()).filter(Boolean).join(",");
       if (kw !== byId.get(ta.dataset.cat).keywords) await S.updateCategory(ta.dataset.cat, { keywords: kw });
+    }
+    for (const sel of $$(".kind-select")) {
+      if (sel.value !== byId.get(sel.dataset.cat).kind) await S.updateCategory(sel.dataset.cat, { kind: sel.value });
     }
     const n = await S.reclassifyAll();
     await limitsPage();
@@ -612,7 +645,7 @@ async function importPage() {
 // ---------------------------------------------------------------------------
 // Старт
 // ---------------------------------------------------------------------------
-const APP_VERSION = "v6";
+const APP_VERSION = "v8";
 if ("serviceWorker" in navigator) {
   // Когда приходит новая версия — один раз перезагрузить страницу, чтобы она применилась
   const hadController = !!navigator.serviceWorker.controller;
